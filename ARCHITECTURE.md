@@ -47,7 +47,8 @@ Facts the design depends on:
    The recorder supplies the time axis.
 7. **No pagination, no bulk placement read.** List endpoints return everything
    ([`docs/MVP.md` — pagination listed as optional](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/docs/MVP.md)),
-   and there is no single call that returns every entity→location pair for a grid.
+   and there is no single call that returns every entity→location pair for a grid. A read-only
+   bulk endpoint has been requested upstream in [Preponderous-Software/viron#234](https://github.com/Preponderous-Software/viron/issues/234) (see [Decisions](#decisions)).
 8. **Auth.** Every endpoint except `/actuator/health` and the API docs needs
    `Authorization: Bearer <JWT>`. Tokens are HMAC-signed (HS256/384/512) with the UTF-8 bytes of
    Viron's `JWT_SECRET` and must carry an `iss` matching `JWT_ISSUER`
@@ -66,7 +67,8 @@ Facts the design depends on:
 | `/api/v1/grids/environment/{environmentId}` | `GridDto[]` | Grid planes | Start of run, and start of each chunk |
 | `/api/v1/locations/grid/{gridId}` | `LocationDto[]` | Cell mesh, location id → (grid, x, y) | Start of run (locations are static) |
 | `/api/v1/entities/grid/{gridId}` | `EntityDto[]` | Which entities are present, and their names | Every tick |
-| `/api/v1/locations/entity/{entityId}` | `LocationDto` | Where each present entity stands | Every tick, per present entity |
+| `/api/v1/locations/entity/{entityId}` | `LocationDto` | Where each present entity stands | Every tick, per present entity (fallback) |
+| Bulk placement read (requested in [Preponderous-Software/viron#234](https://github.com/Preponderous-Software/viron/issues/234); path not yet defined) | Every placed entity's id, grid, environment, `x`, `y` | Replaces the two per-tick rows above | Every tick, **when the Viron instance provides it** |
 
 Endpoint list: [`docs/MVP.md`](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/docs/MVP.md);
 the per-grid entity query: [`EntityController.java` L52-56](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/src/main/java/preponderous/viron/controllers/EntityController.java#L52-L56).
@@ -87,8 +89,10 @@ Two options were evaluated.
   USD from Python on top of `usd-core` (see [CONCEPT.md § Prior art](CONCEPT.md#prior-art)).
 - **Viron needs no changes.** Everything the recorder needs is readable over REST (table above).
 - **Viron already treats Python as a client language** (fact 9).
-- **Cost:** one HTTP round trip per present entity per tick (see [Snapshot cost](#snapshot-cost)),
-  and snapshots can be torn in poll mode (see [Consistency](#consistency)).
+- **Cost:** without a bulk endpoint, one HTTP round trip per present entity per tick (see
+  [Snapshot cost](#snapshot-cost)), and snapshots can be torn in poll mode (see
+  [Consistency](#consistency)). Both go away once Viron provides the bulk read requested in
+  [Preponderous-Software/viron#234](https://github.com/Preponderous-Software/viron/issues/234).
 
 ### Option B — Java exporter (rejected for the MVP)
 
@@ -106,7 +110,7 @@ Two options were evaluated.
   tick ends — tick boundaries belong to the driver, not to Viron (fact 6).
 - **What it would gain:** a single consistent database read per tick and no HTTP overhead.
   That benefit is real, and is better obtained by a read-only bulk endpoint in Viron than by a
-  Java exporter (see [Open questions](#open-questions)).
+  Java exporter, and has been requested upstream (see [Decisions](#decisions)).
 
 ---
 
@@ -114,13 +118,13 @@ Two options were evaluated.
 
 | Module | Responsibility |
 |---|---|
-| `client.py` | `VironClient`: thin `requests` wrapper over the five `GET` endpoints; bearer token from `--token` or `VIRON_TOKEN`; timeouts and retry on `503` + `Retry-After` (Viron answers lock-wait overruns that way — [README § Database pool and lock wait](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/README.md#database-pool-and-lock-wait)). Its transport is injectable so tests can substitute a fake Viron. |
-| `snapshot.py` | `Snapshot` (frozen dataclass): `tick`, `wall_clock`, `entities: dict[entity_id → (name, grid_id, location_id)]`. `WorldLayout`: grids and `location_id → (grid_id, x, y)`, fetched once. `take_snapshot(client, layout, tick)`. |
-| `mapping.py` | Pure functions: prim paths, grid origin offsets, `cell_center(grid, x, y)`, entity display colour. No USD or HTTP imports, so it is trivially unit-testable. |
-| `writer.py` | `TimeSampledWriter`: owns a `Usd.Stage`, writes the static scene once, then `write(snapshot)` per tick using sparse sampling with hold keys; `close()` sets the time range and saves. |
+| `client.py` | `VironClient`: thin `requests` wrapper over the five `GET` endpoints, plus the bulk placement read when the Viron instance provides it (probed once per run; see [Snapshot cost](#snapshot-cost)); bearer token from `--token` or `VIRON_TOKEN`; timeouts and retry on `503` + `Retry-After` (Viron answers lock-wait overruns that way — [README § Database pool and lock wait](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/README.md#database-pool-and-lock-wait)). Its transport is injectable so tests can substitute a fake Viron. |
+| `snapshot.py` | `Snapshot` (frozen dataclass): `tick`, `wall_clock`, `entities: dict[entity_id → (name, grid_id, location_id)]`, `extras: dict[entity_id → dict[str, value]]` (empty unless the driver passes extras). `WorldLayout`: grids and `location_id → (grid_id, x, y)`, fetched once. `take_snapshot(client, layout, tick)`. |
+| `mapping.py` | Pure functions: prim paths, grid origin offsets, `cell_center(grid, x, y)`, `entity_offset(entity_id)` (fan-out within a cell), `entity_position(grid, x, y, entity_id)`, entity display colour, extras value → USD type. No USD or HTTP imports, so it is trivially unit-testable. |
+| `writer.py` | `TimeSampledWriter`: owns a `Usd.Stage`, writes the static scene once, then `write(snapshot)` per tick using sparse sampling with hold keys (positions, presence, names, and extras); `close()` sets the time range and saves. |
 | `chunks.py` | `ChunkedWriter`: rotates to a new `TimeSampledWriter` every `chunk_size` ticks, stitches all chunks with `UsdUtils.StitchClips`, and patches manifest defaults. `flatten(run, out)`. |
-| `recorder.py` | `Recorder`: `capture(tick)` for driven mode; `run_polling(interval, ticks)` for poll mode. |
-| `cli.py` | `viron-usd record …`, `viron-usd flatten …`. |
+| `recorder.py` | `Recorder`: `capture(tick, extras=None)` for driven mode; `run_polling(interval, ticks)` for poll mode (no extras). |
+| `cli.py` | `viron-usd record …`, `viron-usd flatten …`; both take `--binary` (see [Output format](#output-format)). |
 
 ---
 
@@ -138,12 +142,16 @@ sequenceDiagram
     R->>W: write static scene
     loop every tick
         D->>V: PUT move / place / DELETE (driver's own writes)
-        D->>R: capture(tick)
-        R->>V: GET /entities/grid/{g} (per grid)
-        R->>V: GET /locations/entity/{e} (per present entity)
+        D->>R: capture(tick, extras)
+        alt Viron provides the bulk placement read
+            R->>V: GET bulk placements (one call)
+        else fallback
+            R->>V: GET /entities/grid/{g} (per grid)
+            R->>V: GET /locations/entity/{e} (per present entity)
+        end
         R->>W: write(Snapshot)
         alt tick is a chunk boundary
-            W->>F: save chunk_NNNN.usdc
+            W->>F: save chunk_NNNN.usda (.usdc with --binary)
         end
     end
     R->>W: close()
@@ -164,11 +172,12 @@ Stage settings: `upAxis = Z`, `metersPerUnit = 1.0`, one Viron cell = 1 unit. De
 | Environment *E* | `/World/env_<E>` (`Xform`); `viron:environmentId` (int), `viron:name` (string) | — | No |
 | Grid *G* (index *i* within *E*, ordered by `gridId`) | `/World/env_<E>/grids/grid_<G>` (`Xform`), translated to `(i × (rows + gap), 0, 0)`; `viron:gridId`, `viron:rows`, `viron:columns`, `viron:name` | — | No |
 | Locations of grid *G* | `/World/env_<E>/grids/grid_<G>/cells` (`Mesh`): one quad face per location, face index `x × columns + y`; `int[] viron:locationIds` maps face index → `locationId` | — | No |
-| Entity *e* | `/World/env_<E>/entities/e_<e>` (`Xform`) with child `geom` (`Cube`, size 0.8, constant `primvars:displayColor` from a hash of the entity id) | — | — |
-| Entity position | `e_<e>.xformOp:translate` (`double3`) = grid origin + `(x + 0.5, y + 0.5, 0.4)` | `double3` | **Yes** |
+| Entity *e* | `/World/env_<E>/entities/e_<e>` (`Xform`) with child `geom` (`Cube`, size 0.4, `primvars:displayColor` from a hash of the entity id unless the driver supplies `color`) | — | — |
+| Entity position | `e_<e>.xformOp:translate` (`double3`) = grid origin + `(x + 0.5 + dx, y + 0.5 + dy, 0.2)`, where `(dx, dy) = entity_offset(e)` (see [Shared cells](#shared-cells)) | `double3` | **Yes** |
 | Entity presence | `e_<e>.visibility` = `inherited` when placed in a grid of *E*, else `invisible` | `token` | **Yes** |
 | Entity name | `e_<e>.viron:name` | `string` | **Yes** |
 | Entity id | `e_<e>.viron:entityId` | `int` | No |
+| Driver extra *k* (optional, driven mode only) | `e_<e>.extras:<k>`; the reserved key `color` (RGB triple in `[0, 1]`) is written to `geom.primvars:displayColor` instead (see [Optional per-entity extras](#optional-per-entity-extras)) | `bool` / `int` / `double` / `string` / `double3` (`color3f[]` for `color`) | **Yes** |
 | Tick wall-clock time | `/World.viron:wallClock` (seconds since epoch) | `double` | **Yes** |
 
 Notes:
@@ -178,10 +187,47 @@ Notes:
   documented in the stage's `customLayerData`.
 - **Entities are not parented under grids** because an entity can change grid between ticks;
   its grid is folded into its translation instead.
-- **Several entities on one location** overlap exactly in the MVP. See open questions.
+- **Several entities on one location** are fanned out within the cell (see [Shared cells](#shared-cells)).
 - **Locations are faces, not prims.** A prim per location would put 10,000 prims on the stage for
   one 100×100 grid, for data that never changes. The face table keeps every location
   addressable by id.
+
+### Shared cells
+
+Viron lets a location hold several entities (fact 2). So that every one of them stays visible,
+each entity is drawn at a small offset from the cell centre:
+
+- `entity_offset(e)` is a pure function of the entity id: the first 8 bytes of SHA-256 of the
+  decimal id string, read as two unsigned 32-bit integers and scaled to `[-0.25, 0.25]` each.
+  It does not use Python's `hash()`, which is not stable for strings across processes.
+- The offset is applied to **every** entity, alone in its cell or not, so an entity never jumps
+  when others arrive or leave — its position changes only when its own location does.
+- With the cube at size 0.4, an offset of at most 0.25 keeps the cube inside its cell
+  (`0.5 ± 0.25 ± 0.2` stays within `[0.05, 0.95]`).
+- Two entities can still overlap partly if their offsets happen to be close; an exact
+  coincidence needs a hash collision on 64 bits.
+
+### Optional per-entity extras
+
+Viron entities carry only id, name, and creation date. In driven mode the driver may pass extra
+per-entity values with each tick:
+
+```python
+recorder.capture(tick, extras={7: {"color": (0.9, 0.2, 0.1), "category": "wolf"}})
+```
+
+- **Optional.** A recording made without `extras` (and every poll-mode recording) contains no
+  `extras:*` attributes and is otherwise identical.
+- Each key *k* becomes the time-sampled attribute `extras:<k>` on the entity prim, written with
+  the same sparse-sampling and hold-key rule as the Viron attributes. A key omitted on a later tick
+  keeps its last value; an entity omitted from `extras` keeps all of its values.
+- Types: `bool` → `bool`, `int` → `int`, `float` → `double`, `str` → `string`, a sequence of three
+  numbers → `double3`. The type of a key must stay the same for an entity across the run; a
+  change raises `ValueError`. Keys must be valid USD property names.
+- The reserved key `color` (three numbers in `[0, 1]`) is written as a time-sampled
+  `primvars:displayColor` on the entity's `geom`, replacing the hash colour from that tick on.
+- Extras for an entity that is not placed in the environment at that tick are ignored with a
+  warning, since there is no visible prim state to attach them to.
 
 ---
 
@@ -220,10 +266,20 @@ Before an entity's first appearance, its `visibility` resolves to `invisible` (s
 
 ## Snapshot cost
 
-Per tick, for an environment with *G* grids and *N* placed entities: **G + N** `GET` requests
-(one `/entities/grid/{g}` per grid, one `/locations/entity/{e}` per entity). The alternative,
-asking each location for its entities, costs *rows × columns × G* requests and is only cheaper
-when the grids are nearly full; the client may pick whichever is smaller per grid.
+Per tick, for an environment with *G* grids and *N* placed entities:
+
+- **With the bulk placement read** requested in [Preponderous-Software/viron#234](https://github.com/Preponderous-Software/viron/issues/234): **1** `GET`, scoped to the
+  environment. `VironClient` checks once at the start of a run whether the Viron instance
+  provides it and uses it for every tick if so.
+- **Fallback (Viron at `c0a6fc5`):** **G + N** `GET` requests (one `/entities/grid/{g}` per grid,
+  one `/locations/entity/{e}` per entity). The alternative, asking each location for its
+  entities, costs *rows × columns × G* requests and is only cheaper when the grids are nearly
+  full; the client may pick whichever is smaller per grid.
+
+Entity names come from `/entities/grid/{g}` in the fallback path; with the bulk read they come
+from one `/entities/environment/{environmentId}` call per tick
+([`EntityController.java` L46-50](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/src/main/java/preponderous/viron/controllers/EntityController.java#L46-L50)),
+so the bulk path costs 2 requests per tick rather than 1 unless the endpoint also returns names.
 
 Measuring real latency against a local Viron is part of M7; until then no throughput figure is claimed.
 
@@ -233,7 +289,11 @@ The `GET`s for one tick are separate requests, not one transaction.
 
 - **Driven mode** (the default for the demo): the driver calls `capture(tick)` after its writes
   for the tick and waits for it to return before continuing, so the snapshot is consistent.
-- **Poll mode:** the driver keeps writing while the recorder reads, so a snapshot can be torn.
+- **Poll mode with the bulk placement read:** every placement comes from one query, so the
+  placement map is consistent. Names come from a second call, so a rename or a just-created
+  entity's name can lag by one tick; a placed entity missing from the name list is looked up with
+  `GET /api/v1/entities/{id}`.
+- **Poll mode without it:** the driver keeps writing while the recorder reads, so a snapshot can be torn.
   `take_snapshot` detects the cases it can (an entity listed in grid *g* whose location is not
   in *g*; an entity that `404`s between the two calls), retries the tick once, and otherwise
   records it with a warning in the layer's `customLayerData`.
@@ -251,8 +311,8 @@ runs/<run-id>/
   run.usda            # root: subLayers topology, clips metadata on /World
   run.topology.usda   # every prim and attribute declaration seen in any chunk
   run.manifest.usda   # attributes with time samples, plus defaults (see below)
-  chunk_0000.usdc     # ticks    0– 999, binary crate format
-  chunk_0001.usdc     # ticks 1000–1999
+  chunk_0000.usda     # ticks    0– 999 (chunk_0000.usdc with --binary)
+  chunk_0001.usda     # ticks 1000–1999
   …
 ```
 
@@ -289,17 +349,29 @@ and each per-tick file would repeat every prim declaration.
 
 ### Size
 
-Sparse sampling bounds samples by the number of *changes*, not ticks × entities. The `.usdc`
-crate format stores samples in binary. Concrete numbers will be measured in M6 for a
-fixed scenario (100 entities, 10,000 ticks, 50 % of entities moving per tick) and recorded in
-the repository, rather than estimated here.
+Sparse sampling bounds samples by the number of *changes*, not ticks × entities. Text `.usda`
+is the default (see [Output format](#output-format)); `--binary` switches to the `.usdc` crate
+format, which stores samples in binary. Concrete numbers will be measured in M6 for a
+fixed scenario (100 entities, 10,000 ticks, 50 % of entities moving per tick), for both formats,
+and recorded in the repository, rather than estimated here.
+
+### Output format
+
+- Every layer `viron-usd` writes is text **`.usda` by default**.
+- `--binary` (on `record` and `flatten`) writes the layers that hold time samples — the chunk
+  layers, the single layer of an unchunked recording, and the flattened layer — as **`.usdc`**.
+- `run.usda`, `run.topology.usda`, and `run.manifest.usda` stay text either way: they are small
+  and hold the clip metadata a reader is most likely to inspect.
+- `flatten` writes `run_flat.usda` (or `run_flat.usdc` with `--binary`) unless `-o` is given; an
+  explicit `-o` whose extension disagrees with `--binary` is an error rather than a silent
+  override.
 
 ### Playback targets
 
 | Tool | Reads | Notes |
 |---|---|---|
 | usdview | `run.usda` directly (value clips are core USD) | usdview is **not** in the `usd-core` wheel ("does not provide any of the optional plugins or imaging features"); it comes from a full OpenUSD build (`build_usd.py`, usdview on by default) or a prebuilt OpenUSD distribution. |
-| Blender | `run_flat.usdc` from `viron-usd flatten` | Time-varying transforms import as a Transform Cache constraint; prims with animated visibility are always imported ([Blender manual](https://docs.blender.org/manual/en/latest/files/import_export/usd.html)). Whether animated visibility *plays back* as hide/show, and whether Blender resolves value clips directly, are to be checked in M8. |
+| Blender | `run_flat.usda` (or `.usdc`) from `viron-usd flatten` | Time-varying transforms import as a Transform Cache constraint; prims with animated visibility are always imported ([Blender manual](https://docs.blender.org/manual/en/latest/files/import_export/usd.html)). Whether animated visibility *plays back* as hide/show, and whether Blender resolves value clips directly, are to be checked in M8. |
 
 ---
 
@@ -332,22 +404,35 @@ the repository, rather than estimated here.
 
 ---
 
+## Decisions
+
+Recorded 2026-10-17. Each resolves a former open question.
+
+1. **Bulk placement read in Viron — requested upstream.** A read-only endpoint returning every
+   placed entity's location (entity id, grid, environment, `x`, `y`) in one call, optionally
+   scoped to an environment, was filed as [Preponderous-Software/viron#234](https://github.com/Preponderous-Software/viron/issues/234). The recorder uses it when the Viron
+   instance provides it and falls back to *G + N* requests otherwise
+   (see [Snapshot cost](#snapshot-cost) and [Consistency](#consistency)).
+2. **Visual state beyond position — optional driver extras.** `capture(tick, extras={entity_id: {...}})`
+   writes custom time-sampled attributes (e.g. colour, category); recordings made from Viron
+   alone work without it (see [Optional per-entity extras](#optional-per-entity-extras)).
+3. **Several entities on one location — fan out within the cell**, using small deterministic
+   offsets that are stable per entity id, so every entity stays visible
+   (see [Shared cells](#shared-cells)).
+4. **Packaging — git only for now.** `viron-usd` is installed from a git checkout; it is not
+   published to PyPI.
+5. **Output format — `.usda` by default, `--binary` for `.usdc`**
+   (see [Output format](#output-format)).
+
+---
+
 ## Open questions
 
-1. **Bulk placement read in Viron.** A read-only endpoint returning every `(entityId, locationId)`
-   pair for a grid or environment would cut per-tick cost from *G + N* requests to one, and would
-   make poll-mode snapshots consistent. Should that be proposed to Viron, or is *G + N* acceptable?
-2. **Visual state beyond position.** Viron entities carry only id, name, and creation date. Should
-   the recorder accept an optional per-entity callback from the driver (e.g. a colour or
-   category) to time-sample as a primvar, or stay strictly Viron-only?
-3. **Several entities on one location.** Overlap exactly (MVP), fan out within the cell, or stack
-   along Z?
-4. **Grid layout.** Side by side along X (MVP), or a square-ish tiling for environments with many
+1. **Grid layout.** Side by side along X (MVP), or a square-ish tiling for environments with many
    grids?
-5. **Location prims.** Is a prim per location wanted for small grids (e.g. to attach per-location
+2. **Location prims.** Is a prim per location wanted for small grids (e.g. to attach per-location
    data later), or is the face table sufficient?
-6. **Occupancy colouring.** Time-sampled per-face `displayColor` on the cell mesh would show
+3. **Occupancy colouring.** Time-sampled per-face `displayColor` on the cell mesh would show
    occupancy at a glance. Worth adding after the MVP?
-7. **Grids and entities changing mid-run.** Grids are re-read at each chunk boundary; a grid
+4. **Grids and entities changing mid-run.** Grids are re-read at each chunk boundary; a grid
    created mid-chunk appears from the next chunk. Is that granularity enough?
-8. **Packaging.** Publish `viron-usd` to PyPI after the MVP, or keep it install-from-git?

@@ -77,9 +77,10 @@ The output plays back in `usdview` and, after flattening, in Blender's timeline.
   happens is out of scope for the MVP.
 - **Rich visuals.** Entities are simple shapes; there are no meshes, rigs, materials beyond a
   display colour, or rendering pipelines.
-- **Visual state Viron does not have.** Anything beyond position, presence, and name would need
-  to come from outside Viron, and is left for later (see open questions in
-  [ARCHITECTURE.md](ARCHITECTURE.md#open-questions)).
+- **Visual state Viron does not have.** Viron supplies only position, presence, and name. A
+  driver may pass optional per-entity extras (e.g. colour, category) with each capture, but the
+  recorder never invents state Viron and the driver do not provide (see
+  [ARCHITECTURE.md § Optional per-entity extras](ARCHITECTURE.md#optional-per-entity-extras)).
 - **Round-tripping.** USD → Viron import is not planned.
 
 ## Prior art
