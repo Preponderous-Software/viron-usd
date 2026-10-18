@@ -2,7 +2,7 @@
 
 **Viron USD** is a **flight recorder for Viron worlds** — it captures a [Viron](https://github.com/Preponderous-Software/viron)-backed simulation once per tick and writes it as an [OpenUSD](https://openusd.org) stage whose attributes are **time-sampled**, so a whole run can be scrubbed and replayed in `usdview` or Blender's timeline.
 
-> **Status: in development.** The MVP is being built milestone by milestone (see [MVP.md § Milestones](MVP.md#-milestones)). Recording works (driven mode, `viron-usd record` with chunked value-clip layers, and `viron-usd flatten`); the real-Viron integration suite and the playback demo are still to come.
+> **Status: MVP implemented (0.1.0).** All eight [MVP milestones](MVP.md#-milestones) have landed: driven and poll-mode recording, chunked value-clip layers, `viron-usd flatten`, an integration suite that runs against a real Viron in CI, and a playback demo. One acceptance check is still manual and open: watching a run in usdview and the Blender UI ([MVP criterion 11](MVP.md#-acceptance-criteria); see [docs/PLAYBACK.md](docs/PLAYBACK.md#6-manual-verification-criterion-11)).
 
 ---
 
@@ -34,7 +34,7 @@ With Viron USD:
 
 Viron USD is a **read-only observer** of Viron. It never creates, moves, or deletes anything in Viron; it only reads.
 
-Core responsibilities (planned):
+Core responsibilities:
 - Reading environments, grids, locations, and entities from Viron's REST API.
 - Mapping each 2D grid onto a plane in 3D space.
 - Writing entity position, presence, and name as USD time samples, one time code per tick.
@@ -43,17 +43,18 @@ Core responsibilities (planned):
 
 ---
 
-## 📄 Planning Documents
+## 📄 Documents
 
 | Document | What it covers |
 |---|---|
 | [CONCEPT.md](CONCEPT.md) | The problem, who it is for, non-goals, and prior art. |
 | [MVP.md](MVP.md) | The smallest end-to-end slice, acceptance criteria, and the milestone list (one GitHub issue per milestone). |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Components, data flow, the Viron→USD mapping, the time-code scheme, the layer strategy for long runs, dependencies, testing, and open questions. |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Components, data flow, the Viron→USD mapping, the time-code scheme, the layer strategy for long runs, measured sizes and latency, dependencies, testing, and open questions. |
+| [docs/PLAYBACK.md](docs/PLAYBACK.md) | Recording the random-walk demo against a local Viron and playing it back in usdview and Blender, with what was checked in Blender. |
 
 ---
 
-## 🛠 Planned Tech Stack
+## 🛠 Tech Stack
 
 - Python 3.10+
 - [`usd-core`](https://pypi.org/project/usd-core/) (Pixar's official OpenUSD Python wheel)
@@ -65,7 +66,7 @@ Why Python rather than Java, given that Viron is a Java/Spring Boot service: Ope
 
 ---
 
-## 📂 Planned Project Structure
+## 📂 Project Structure
 
 viron-usd/  
  ├── src/viron_usd/  
@@ -80,7 +81,9 @@ viron-usd/
  │    └── random_walk.py # Playback demo: entities wander a Viron grid  
  ├── benchmarks/  
  │    └── stage_size.py  # Stage-size measurement for ARCHITECTURE.md § Size  
- ├── tests/              # Unit tests (fake Viron) and integration tests (real Viron)  
+ ├── tests/              # Unit tests (fake Viron); tests/integration/ runs against a real Viron  
+ ├── docs/  
+ │    └── PLAYBACK.md    # Demo + usdview/Blender walkthrough  
  ├── CONCEPT.md  
  ├── MVP.md  
  ├── ARCHITECTURE.md  
@@ -89,6 +92,9 @@ viron-usd/
 ---
 
 ## ▶️ Usage
+
+For a complete walkthrough — start a local Viron, record the random-walk demo, and play it back in
+usdview and Blender — see **[docs/PLAYBACK.md](docs/PLAYBACK.md)**.
 
 Viron needs a JWT bearer token (HS256, signed with the Viron instance's `JWT_SECRET`, `iss` matching its `JWT_ISSUER`). Pass it with `--token` or the `VIRON_TOKEN` environment variable. The recorder only sends `GET` requests.
 

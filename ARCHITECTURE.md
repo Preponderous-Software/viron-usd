@@ -1,6 +1,6 @@
 # Architecture — Viron USD
 
-> Status: planning. Every statement about Viron is cited against
+> Status: MVP implemented; this document describes the design as built. Every statement about Viron is cited against
 > [`Preponderous-Software/viron@c0a6fc5`](https://github.com/Preponderous-Software/viron/tree/c0a6fc54b66ddab63a9c90f4858fced55ea68e82)
 > (`main` on 2026-10-17). `V/` below is shorthand for
 > `https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/`.
@@ -420,7 +420,7 @@ smaller than text.
 | Tool | Reads | Notes |
 |---|---|---|
 | usdview | `run.usda` directly (value clips are core USD) | usdview is **not** in the `usd-core` wheel ("does not provide any of the optional plugins or imaging features"); it comes from a full OpenUSD build (`build_usd.py`, usdview on by default) or a prebuilt OpenUSD distribution. |
-| Blender | `run_flat.usda` (or `.usdc`) from `viron-usd flatten` | Time-varying transforms import as a Transform Cache constraint; prims with animated visibility are always imported ([Blender manual](https://docs.blender.org/manual/en/latest/files/import_export/usd.html)). Whether animated visibility *plays back* as hide/show, and whether Blender resolves value clips directly, are to be checked in M8. |
+| Blender | `run_flat.usda` (or `.usdc`) from `viron-usd flatten` | Time-varying transforms import as a Transform Cache constraint; prims with animated visibility are always imported ([Blender manual](https://docs.blender.org/manual/en/latest/files/import_export/usd.html)). Checked in M8 with Blender 4.2.23 LTS (`bpy`, headless): entities animate through Transform Cache constraints and the value-clip `run.usda` also imports with the same motion, but animated visibility does **not** play back as hide/show, so unplaced entities stay visible (at the origin in chunks where they have no samples); the frame rate must be set by hand. Details: [docs/PLAYBACK.md](docs/PLAYBACK.md#what-was-checked-in-blender-2026-10-17). |
 
 ---
 
