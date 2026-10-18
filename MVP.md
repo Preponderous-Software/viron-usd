@@ -18,7 +18,7 @@ random_walk.py (drives Viron)  ──tick──▶  Recorder.capture(tick)
                                          Viron (localhost:9999)
                                                │  Snapshot
                                                ▼
-                                   TimeSampledWriter → chunk_0000.usdc, chunk_0001.usdc, …
+                                   TimeSampledWriter → chunk_0000.usda, chunk_0001.usda, …
                                                │  UsdUtils.StitchClips
                                                ▼
                                    run.usda  ──▶  usdview   /   viron-usd flatten ──▶ Blender
@@ -31,13 +31,15 @@ random_walk.py (drives Viron)  ──tick──▶  Recorder.capture(tick)
 - A read-only Python client for the Viron endpoints the recorder needs, with bearer-token auth.
 - Recording **one Viron environment** (all of its grids) per run.
 - Static scene: one plane per grid, laid out side by side; a cell mesh with one face per location.
-- Entities as prims with time-sampled `xformOp:translate`, `visibility`, and `viron:name`.
+- Entities as prims with time-sampled `xformOp:translate`, `visibility`, and `viron:name`;
+  entities sharing a location are fanned out within the cell by a stable per-entity offset.
 - Sparse sampling with hold keys (a sample is written only when a value changes, plus the
   unchanged value at the tick before the change).
-- **Driven mode**: a Python simulation calls `recorder.capture(tick)` after each tick.
+- **Driven mode**: a Python simulation calls `recorder.capture(tick)` after each tick, optionally
+  passing per-entity `extras` (e.g. colour, category) that are time-sampled alongside Viron's data.
 - **Poll mode**: `viron-usd record` captures on a fixed wall-clock interval, numbering ticks itself.
-- Fixed-size chunk layers (`.usdc`) stitched into `run.usda` with value clips, including a
-  manifest default that keeps late-arriving entities hidden before they first appear.
+- Fixed-size chunk layers (`.usda`, or `.usdc` with `--binary`) stitched into `run.usda` with
+  value clips, including a manifest default that keeps late-arriving entities hidden before they first appear.
 - `viron-usd flatten` to bake a run into one layer for tools that do not read value clips.
 - Unit tests against a fake Viron; integration tests against a real Viron in Docker Compose.
 - A playback demo: a random-walk driver, a recorded run, and instructions for usdview and Blender.
@@ -52,7 +54,8 @@ random_walk.py (drives Viron)  ──tick──▶  Recorder.capture(tick)
 - Live playback while the simulation runs.
 - A Java recorder or an in-process exporter inside Viron.
 - Rendering (Hydra/Storm in usdview is the only viewer the MVP targets, plus Blender's viewport).
-- Packaging for PyPI (installation from a git checkout is enough for the MVP).
+- Packaging for PyPI (decided: installation from a git checkout only, for now — see
+  [ARCHITECTURE.md § Decisions](ARCHITECTURE.md#decisions)).
 
 ---
 
@@ -65,7 +68,8 @@ says otherwise.
    (asserted by the fake-Viron transport rejecting any other method).
 2. **Correct placement.** For a run where entity *e* is at location `(x, y)` in grid *g* at tick
    *t*, the stage's `/World/env_<E>/entities/e_<id>` prim has, at time code *t*, a local
-   translation equal to `mapping.cell_center(g, x, y)`.
+   translation equal to `mapping.entity_position(g, x, y, e)` — the cell centre plus the entity's
+   stable fan-out offset.
 3. **Presence.** An entity that is not placed in any of the environment's grids at tick *t*
    (never placed yet, removed, or deleted) has `ComputeVisibility(t) == invisible`; a placed
    one has `inherited`.
@@ -79,12 +83,13 @@ says otherwise.
    `run.usda` whose `startTimeCode`/`endTimeCode` are the first and last tick, and whose resolved
    values equal those of the same run recorded unchunked.
 8. **Late arrivals.** An entity first placed in chunk 3 is invisible at every time code in chunks 1–2.
-9. **Flatten.** `viron-usd flatten run.usda -o run_flat.usdc` produces a single layer with no
-   `clips` metadata whose resolved values equal those of `run.usda` at every integer time code.
+9. **Flatten.** `viron-usd flatten run.usda -o run_flat.usda` (and, with `--binary`,
+   `-o run_flat.usdc`) produces a single layer with no `clips` metadata whose resolved values
+   equal those of `run.usda` at every integer time code.
 10. **Real Viron.** The integration suite starts Viron with Docker Compose, mints a test token,
     runs the random-walk demo for 50 ticks, and criteria 1–5 hold on the result.
 11. **Playback (manual, documented).** `run.usda` opens in usdview and the entities move when
-    the timeline plays; `run_flat.usdc` imports into Blender with animated entities. A short
+    the timeline plays; `run_flat.usda` imports into Blender with animated entities. A short
     screen capture or screenshots are attached to the demo issue.
 
 ---
@@ -105,11 +110,14 @@ A small client over the `GET` endpoints listed in
 [ARCHITECTURE.md § What Viron exposes](ARCHITECTURE.md#what-viron-exposes), with bearer-token
 auth, and a `Snapshot` dataclass (environment, grids, locations per grid, entity → (grid,
 location) placements, entity names) built from one tick's reads. Includes the fake-Viron
-transport used by the rest of the unit tests, and torn-snapshot detection for poll mode.
+transport used by the rest of the unit tests, and torn-snapshot detection for poll mode. Reads
+use the per-grid and per-entity endpoints; the client is structured so the bulk placement read
+requested in [Preponderous-Software/viron#234](https://github.com/Preponderous-Software/viron/issues/234)
+can replace them when a Viron instance provides it.
 
 ### M3 — Viron → USD mapping and static scene
 
-`mapping.py` (prim paths, grid offsets, cell centres, colours) and the static part of the
+`mapping.py` (prim paths, grid offsets, cell centres, per-entity fan-out offsets, colours) and the static part of the
 stage: `/World`, Z-up, metres-per-unit, one grid plane and cell mesh per grid with
 `viron:*` identity attributes and the face-index → location-id table.
 
@@ -123,11 +131,12 @@ Covers acceptance criteria 2–6 on synthetic snapshots.
 
 `Recorder` with `capture(tick)` (driven mode) and a polling loop (poll mode), plus the
 `viron-usd record` command (`--viron-url`, `--token`/`VIRON_TOKEN`, `--environment`,
-`--interval`, `--ticks`, `--out`, `--ticks-per-second`). Writes a single unchunked layer.
+`--interval`, `--ticks`, `--out`, `--ticks-per-second`, `--binary`). `capture` accepts optional
+per-entity `extras`. Writes a single unchunked layer.
 
 ### M6 — Chunked layers, value clips, and `flatten`
 
-Per-chunk `.usdc` layers with their own time range, stitched with `UsdUtils.StitchClips`
+Per-chunk layers (`.usda`, `.usdc` with `--binary`) with their own time range, stitched with `UsdUtils.StitchClips`
 into `run.usda`; manifest defaults for late arrivals; `viron-usd flatten`. Covers
 acceptance criteria 7–9 and records the size measurements listed in
 [ARCHITECTURE.md § Layer strategy](ARCHITECTURE.md#layer-strategy-for-long-runs).
