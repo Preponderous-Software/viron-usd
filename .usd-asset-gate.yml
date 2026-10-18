@@ -1,0 +1,27 @@
+# usd-asset-gate configuration (https://github.com/Preponderous-Software/usd-asset-gate).
+# CI checks runs recorded from a real Viron; see .github/workflows/usd-asset-gate.yml.
+version: 1
+fail_on: warning
+
+rules:
+  # viron-usd writes one grid cell = one metre, Z up, with /World as the default prim.
+  stage-metadata:
+    metersPerUnit: 1
+    upAxis: "Z"
+  file-size:
+    max_bytes: { default: 10MB }
+
+overrides:
+  # Exception: run.manifest.usda is the value-clip manifest that
+  # UsdUtils.StitchClips writes next to a chunked run. It is only ever composed
+  # through run.usda's clip metadata, never opened as a stage, so it has no
+  # default prim and no stage metadata by design. Its composition is still
+  # checked through run.usda, and every other rule still applies to it.
+  - paths: ["**/*.manifest.usda", "**/*.manifest.usdc"]
+    rules:
+      default-prim: { enabled: false }
+      stage-metadata: { enabled: false }
+      # Disabling the two aliases above hands their checks back to these
+      # upstream validators, so they are disabled for manifests too.
+      "upstream:usdGeomValidators:StageMetadataChecker": { enabled: false }
+      "upstream:usdValidation:StageMetadataChecker": { enabled: false }

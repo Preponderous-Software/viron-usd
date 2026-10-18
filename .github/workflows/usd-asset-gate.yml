@@ -1,0 +1,58 @@
+# USD asset gate: OpenUSD's validators plus this repo's house rules
+# (.usd-asset-gate.yml) on runs recorded from a real, throwaway Viron with the
+# playback demo driver (docs/PLAYBACK.md). No USD is committed here, so the gate
+# checks a sample generated in this job.
+name: USD asset gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  # usd-asset-gate has no release tag yet: a full commit SHA on its main branch
+  # ("Bring two ARCHITECTURE.md passages up to date with the shipped MVP", 2026-10-18).
+  USD_ASSET_GATE_SHA: e8b28531092a044ca6dbdf5b384e89f6ef03b516
+
+jobs:
+  generated-assets:
+    name: generated stages (real Viron)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      VIRON_SRC: ${{ github.workspace }}/.viron-src
+      JWT_SECRET: viron-usd-integration-test-secret-0123456789
+      JWT_ISSUER: viron-usd-test
+      VIRON_URL: http://localhost:9999
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install viron-usd and usd-asset-gate (pinned)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[dev]" \
+            "usd-asset-gate @ git+https://github.com/Preponderous-Software/usd-asset-gate@${USD_ASSET_GATE_SHA}"
+      - name: Start Viron (Docker Compose, pinned commit)
+        run: tests/integration/start_viron.sh
+      - name: Record sample runs (chunked with value clips, single binary layer, flattened)
+        run: |
+          export VIRON_TOKEN="$(python -c 'import sys; sys.path.insert(0, "tests"); from viron_token import mint_token; print(mint_token())')"
+          out="$RUNNER_TEMP/usd-out"
+          python examples/random_walk.py --viron-url "$VIRON_URL" --ticks 30 --entities 6 --grid-size 6 \
+            --chunk-size 10 --out "$out/chunked"
+          python examples/random_walk.py --viron-url "$VIRON_URL" --ticks 10 --entities 4 --grid-size 4 \
+            --chunk-size 0 --binary --out "$out/single"
+          viron-usd flatten "$out/chunked/run.usda"
+      - name: usd-asset-gate
+        run: usd-asset-gate check --format github --summary "$GITHUB_STEP_SUMMARY" "$RUNNER_TEMP/usd-out"
+      - name: Viron logs
+        if: failure()
+        run: docker compose -f tests/integration/compose.yml logs --tail 200
+      - name: Stop Viron
+        if: always()
+        run: tests/integration/start_viron.sh down
