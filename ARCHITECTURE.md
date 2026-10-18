@@ -124,7 +124,7 @@ Two options were evaluated.
 | `mapping.py` | Pure functions: prim paths, grid origin offsets, `cell_center(grid, x, y)`, `entity_offset(entity_id)` (fan-out within a cell), `entity_position(grid, x, y, entity_id)`, entity display colour, extras value → USD type. No USD or HTTP imports, so it is trivially unit-testable. |
 | `writer.py` | `TimeSampledWriter`: owns a `Usd.Stage`, writes the static scene once, then `write(snapshot)` per tick using sparse sampling with hold keys (positions, presence, names, and extras); `close()` sets the time range and saves. |
 | `chunks.py` | `ChunkedWriter`: rotates to a new `TimeSampledWriter` every `chunk_size` ticks, stitches all chunks with `UsdUtils.StitchClips`, and patches manifest defaults. `flatten(run, out)`. |
-| `recorder.py` | `Recorder`: `capture(tick, extras=None)` for driven mode; `run_polling(interval, ticks)` for poll mode (no extras). |
+| `recorder.py` | `Recorder(client, environment_id, writer)` (or `Recorder.create(client, environment_id, out_dir, …)`, which fetches the layout and opens the writer): `capture(tick, extras=None)` for driven mode (ticks must increase); `run_polling(interval, ticks)` for poll mode (no extras); `close()`. |
 | `cli.py` | `viron-usd record …`, `viron-usd flatten …`; both take `--binary` (see [Output format](#output-format)). |
 
 ---

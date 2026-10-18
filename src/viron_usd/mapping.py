@@ -121,6 +121,7 @@ def entity_color(entity_id: int) -> Vec3:
 # -- driver extras ------------------------------------------------------------------------
 
 COLOR_KEY = "color"
+INT32_MIN, INT32_MAX = -(2**31), 2**31 - 1
 _PROPERTY_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(:[A-Za-z_][A-Za-z0-9_]*)*$")
 
 
@@ -132,17 +133,22 @@ def is_valid_extra_key(key: str) -> bool:
 def extra_type(value: Any) -> str:
     """USD value type name for a driver extra: bool, int, double, string, or double3.
 
-    Raises ``TypeError`` for anything else.
+    Raises ``TypeError`` for anything else, and ``ValueError`` for a value the USD type cannot
+    hold (an ``int`` outside the signed 32-bit range, or a vector component too large for a
+    double).
     """
     if isinstance(value, bool):
         return "bool"
     if isinstance(value, int):
+        if not INT32_MIN <= value <= INT32_MAX:
+            raise ValueError(f"extras int {value} is outside the 32-bit range of a USD int")
         return "int"
     if isinstance(value, float):
         return "double"
     if isinstance(value, str):
         return "string"
     if _is_number_triple(value):
+        _as_doubles(value)
         return "double3"
     raise TypeError(f"unsupported extras value {value!r} ({type(value).__name__})")
 
@@ -155,8 +161,18 @@ def _is_number_triple(value: Any) -> bool:
     )
 
 
+def _as_doubles(value: Sequence[float]) -> Vec3:
+    try:
+        return (float(value[0]), float(value[1]), float(value[2]))
+    except OverflowError:
+        raise ValueError(f"extras vector {value!r} has a component too large for a double") from None
+
+
 def normalize_color(value: Sequence[float]) -> Vec3:
     """Validate the reserved ``color`` extra: three numbers in ``[0, 1]``."""
-    if not _is_number_triple(value) or not all(0.0 <= float(c) <= 1.0 for c in value):
+    if not _is_number_triple(value):
         raise ValueError(f"extras 'color' must be three numbers in [0, 1], got {value!r}")
-    return (float(value[0]), float(value[1]), float(value[2]))
+    color = _as_doubles(value)
+    if not all(0.0 <= c <= 1.0 for c in color):
+        raise ValueError(f"extras 'color' must be three numbers in [0, 1], got {value!r}")
+    return color

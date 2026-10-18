@@ -163,9 +163,10 @@ def test_write_after_close_raises_and_close_is_idempotent(tmp_path):
         writer.write(snap(layout, 0, {}))
 
 
-def test_invalid_ticks_per_second(tmp_path):
+@pytest.mark.parametrize("bad", [0, -1, float("nan"), float("inf")])
+def test_invalid_ticks_per_second(tmp_path, bad):
     with pytest.raises(ValueError):
-        TimeSampledWriter.create(tmp_path / "r.usda", make_layout(), ticks_per_second=0)
+        TimeSampledWriter.create(tmp_path / "r.usda", make_layout(), ticks_per_second=bad)
 
 
 def test_torn_ticks_recorded_in_custom_layer_data(tmp_path):

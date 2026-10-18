@@ -106,6 +106,16 @@ def test_extra_type_rejects(value):
         m.extra_type(value)
 
 
+@pytest.mark.parametrize("value", [2**31, -(2**31) - 1, (10**400, 0, 0)])
+def test_extra_type_rejects_unrepresentable_values(value):
+    with pytest.raises(ValueError):
+        m.extra_type(value)
+
+
+def test_extra_type_int32_bounds():
+    assert m.extra_type(2**31 - 1) == "int" and m.extra_type(-(2**31)) == "int"
+
+
 def test_extra_key_validity():
     assert m.is_valid_extra_key("category")
     assert m.is_valid_extra_key("ns:hp_2")
@@ -115,6 +125,6 @@ def test_extra_key_validity():
 
 def test_normalize_color():
     assert m.normalize_color([1, 0, 0.5]) == (1.0, 0.0, 0.5)
-    for bad in ((1.2, 0, 0), (0, 0), "red"):
+    for bad in ((1.2, 0, 0), (0, 0), "red", (10**400, 0, 0)):
         with pytest.raises(ValueError):
             m.normalize_color(bad)
