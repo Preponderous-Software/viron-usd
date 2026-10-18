@@ -126,7 +126,7 @@ _PROPERTY_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(:[A-Za-z_][A-Za-z0-9_]*)*$
 
 def is_valid_extra_key(key: str) -> bool:
     """Whether ``key`` can be used in the property name ``extras:<key>``."""
-    return isinstance(key, str) and bool(_PROPERTY_NAME.match(key))
+    return isinstance(key, str) and bool(_PROPERTY_NAME.fullmatch(key))
 
 
 def extra_type(value: Any) -> str:

@@ -109,7 +109,7 @@ def test_extra_type_rejects(value):
 def test_extra_key_validity():
     assert m.is_valid_extra_key("category")
     assert m.is_valid_extra_key("ns:hp_2")
-    for bad in ("", "2x", "has space", "a-b", "a:", 3):
+    for bad in ("", "2x", "has space", "a-b", "a:", "category\n", "a\nb", 3):
         assert not m.is_valid_extra_key(bad)
 
 
