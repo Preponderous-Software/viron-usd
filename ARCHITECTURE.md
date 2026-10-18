@@ -292,9 +292,11 @@ capture per tick, timed around `Recorder.capture`):
 |---|---|---|---|---|
 | Local (Viron jar + PostgreSQL 12 on the same machine, 2026-10-17) | `random_walk.py`, 50 ticks, 8 entities, 1 grid | 21.0 ms | 27.7 ms | 9.1 (= 1 + 8, plus the one-off layout reads) |
 | Local (same) | scripted walk, 50 ticks, 7 entities, 2 grids, chunk size 20 | 32.7 ms | 51.5 ms | 2 + *N* |
+| CI (GitHub-hosted `ubuntu-latest`, Docker Compose, 2026-10-17) | `random_walk.py`, 50 ticks, 8 entities, 1 grid | 14.6 ms | 19.2 ms | 9.1 |
+| CI (same) | scripted walk, 50 ticks, 7 entities, 2 grids, chunk size 20 | 20.2 ms | 30.2 ms | 2 + *N* |
 
 Cost grows with *G + N* as predicted; a few milliseconds per placed entity on a local machine.
-The CI job prints the same figures for its run (`pytest -m integration -s`).
+The CI job prints these figures on every run (`pytest -m integration -s`).
 
 ## Consistency
 
