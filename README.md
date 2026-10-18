@@ -152,6 +152,15 @@ pytest -m "not integration"
 viron-usd --help
 ```
 
+The integration suite needs Docker: it starts a throwaway Viron at a pinned commit, then runs
+against it (CI runs it as a separate job):
+
+```bash
+tests/integration/start_viron.sh          # clone Viron at the pinned commit, build, start, wait
+pytest -m integration
+tests/integration/start_viron.sh down
+```
+
 ---
 
 ## 🔗 Related
