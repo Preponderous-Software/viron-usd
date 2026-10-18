@@ -153,6 +153,23 @@ def read_placements(
     return _fallback_placements(client, layout)
 
 
+def _freeze_value(value: Any) -> Any:
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_value(v) for v in value)
+    return value
+
+
+def freeze_extras(extras: Mapping[int, Mapping[str, Any]] | None) -> Mapping[int, Mapping[str, Any]]:
+    """A read-only deep copy of driver extras, so later changes by the driver to its own dicts
+    or lists cannot alter an already-captured snapshot (lists become tuples)."""
+    return MappingProxyType(
+        {
+            int(entity_id): MappingProxyType({k: _freeze_value(v) for k, v in values.items()})
+            for entity_id, values in (extras or {}).items()
+        }
+    )
+
+
 def take_snapshot(
     client: VironClient,
     layout: WorldLayout,
@@ -175,6 +192,6 @@ def take_snapshot(
         tick=int(tick),
         wall_clock=float(wall_clock),
         entities=MappingProxyType(placements),
-        extras=MappingProxyType({int(k): dict(v) for k, v in (extras or {}).items()}),
+        extras=freeze_extras(extras),
         warnings=tuple(torn),
     )

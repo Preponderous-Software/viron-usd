@@ -85,7 +85,7 @@ def test_extras_are_carried(viron):
     viron.place(e, g, 0, 0)
     client = viron.client()
     snap = take_snapshot(client, WorldLayout.fetch(client, env), 0, extras={e: {"category": "wolf"}})
-    assert snap.extras == {e: {"category": "wolf"}}
+    assert {k: dict(v) for k, v in snap.extras.items()} == {e: {"category": "wolf"}}
 
 
 def _tear_once(viron, path_suffix, action):
@@ -191,3 +191,23 @@ def test_entity_listed_in_two_grids_is_retried(viron):
     snap = take_snapshot(client, layout, 0)
     assert state["done"]
     assert snap.entities[e].grid_id == g2 and snap.warnings == ()
+
+
+def test_captured_extras_are_frozen_against_later_driver_changes(viron):
+    env, (g,) = world(viron)
+    e = viron.create_entity("a")
+    viron.place(e, g, 0, 0)
+    client = viron.client()
+    color = [0.9, 0.2, 0.1]
+    values = {"color": color, "category": "wolf"}
+    extras = {e: values}
+    snap = take_snapshot(client, WorldLayout.fetch(client, env), 0, extras=extras)
+    color[0] = 0.0
+    values["category"] = "sheep"
+    extras[e + 1] = {"category": "x"}
+    assert dict(snap.extras[e]) == {"color": (0.9, 0.2, 0.1), "category": "wolf"}
+    assert set(snap.extras) == {e}
+    with pytest.raises(TypeError):
+        snap.extras[e]["category"] = "changed"
+    with pytest.raises(TypeError):
+        snap.extras[e + 2] = {}
