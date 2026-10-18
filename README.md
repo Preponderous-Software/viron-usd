@@ -2,6 +2,10 @@
 
 **Viron USD** is a **flight recorder for Viron worlds** — it captures a [Viron](https://github.com/Preponderous-Software/viron)-backed simulation once per tick and writes it as an [OpenUSD](https://openusd.org) stage whose attributes are **time-sampled**, so a whole run can be scrubbed and replayed in `usdview` or Blender's timeline.
 
+![Twelve coloured entities random-walking on two 7×7 Viron grids, replayed from the time-sampled USD stage](docs/images/replay.gif)
+
+*A 150-tick run recorded from a real local Viron by [`scripts/record_showcase.py`](scripts/record_showcase.py), replayed from the time-sampled stage and rendered in Blender by [`scripts/render_gif.py`](scripts/render_gif.py); entities sharing a cell fan out inside it.*
+
 > **Status: MVP implemented (0.1.0).** All eight [MVP milestones](MVP.md#-milestones) have landed: driven and poll-mode recording, chunked value-clip layers, `viron-usd flatten`, an integration suite that runs against a real Viron in CI, and a playback demo. One acceptance check is still manual and open: watching a run in usdview and the Blender UI ([MVP criterion 11](MVP.md#-acceptance-criteria); see [docs/PLAYBACK.md](docs/PLAYBACK.md#6-manual-verification-criterion-11)).
 
 ---
@@ -81,6 +85,9 @@ viron-usd/
  │    └── random_walk.py # Playback demo: entities wander a Viron grid  
  ├── benchmarks/  
  │    └── stage_size.py  # Stage-size measurement for ARCHITECTURE.md § Size  
+ ├── scripts/  
+ │    ├── record_showcase.py  # Records the README animation's run (writes to a local Viron)  
+ │    └── render_gif.py       # Renders a recorded run to a GIF with headless Blender  
  ├── tests/              # Unit tests (fake Viron); tests/integration/ runs against a real Viron  
  ├── docs/  
  │    └── PLAYBACK.md    # Demo + usdview/Blender walkthrough  
