@@ -245,6 +245,9 @@ recorder.capture(tick, extras={7: {"color": (0.9, 0.2, 0.1), "category": "wolf"}
 
 ## Sampling strategy
 
+(The sampler described here is `usd_recorder.Track`, shared with other recorders through
+[usd-recorder](https://github.com/Preponderous-Software/usd-recorder).)
+
 USD interpolates numeric attributes such as `double3` linearly between authored samples, while
 `token` and `string` attributes are held. Writing a sample only when a value changes is
 therefore not enough for `translate`: an entity at A for ticks 0–9 that moves to B at tick 10
@@ -430,6 +433,7 @@ smaller than text.
 |---|---|---|
 | Python | `>=3.10` (CI: 3.10, 3.12) | `usd-core` 26.8 supports `>=3.9,<3.15`; 3.9 is past end of life. |
 | [`usd-core`](https://pypi.org/project/usd-core/) | `==26.8` (pinned) | USD authoring, crate format, `UsdUtils.StitchClips`. Pinned because value-clip behaviour is what the tests assert. |
+| [`usd-recorder`](https://github.com/Preponderous-Software/usd-recorder) | `v0.1.0` (git tag) | The shared recording building blocks: sparse sampling with hold keys (`Track`), extras value typing, atomic `StitchClips` with topology/manifest/root hooks, manifest defaults, and `flatten`. viron-usd keeps its own stage layout, chunk naming and rotation. `tests/test_equivalence.py` compares every output file with golden copies written before the move (byte for byte for text, by text export for `.usdc`). Not on PyPI yet, so it is installed from the tag. |
 | [`requests`](https://pypi.org/project/requests/) | `>=2.32` | HTTP; same floor as Viron's own Python client ([`requirements.txt`](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/requirements.txt)). |
 | [`pytest`](https://pypi.org/project/pytest/) (dev) | `>=8` | Tests. |
 | [`PyJWT`](https://pypi.org/project/PyJWT/) (dev) | `>=2.10` | Minting HS256 test tokens for the integration suite. |

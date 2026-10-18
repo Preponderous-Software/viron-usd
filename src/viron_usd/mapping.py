@@ -1,6 +1,7 @@
 """Viron coordinates → USD prim paths and positions.
 
-Pure functions only: no USD or HTTP imports, so everything here is trivially unit-testable.
+Pure functions only: no HTTP imports and no stage access, so everything here is trivially
+unit-testable. Extras value typing is delegated to ``usd_recorder.values``.
 See ARCHITECTURE.md § Viron → USD mapping and § Shared cells.
 
 Conventions: one Viron cell is 1 unit (``metersPerUnit = 1``), Z is up, Viron ``x`` → USD +X,
@@ -12,8 +13,9 @@ from __future__ import annotations
 
 import colorsys
 import hashlib
-import re
-from typing import Any, Protocol, Sequence
+from typing import Protocol
+
+from usd_recorder import values
 
 GRID_GAP = 2
 ENTITY_SIZE = 0.4
@@ -119,60 +121,19 @@ def entity_color(entity_id: int) -> Vec3:
 
 
 # -- driver extras ------------------------------------------------------------------------
+#
+# Value typing (bool, int, double, string, double3; 32-bit ints; colours in [0, 1]) is
+# usd-recorder's, so viron-usd records extras exactly as any other usd-recorder consumer does.
 
 COLOR_KEY = "color"
-INT32_MIN, INT32_MAX = -(2**31), 2**31 - 1
-_PROPERTY_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(:[A-Za-z_][A-Za-z0-9_]*)*$")
+INT32_MIN, INT32_MAX = values.INT32_MIN, values.INT32_MAX
 
+is_valid_extra_key = values.is_valid_property_name
+"""Whether ``key`` can be used in the property name ``extras:<key>``."""
 
-def is_valid_extra_key(key: str) -> bool:
-    """Whether ``key`` can be used in the property name ``extras:<key>``."""
-    return isinstance(key, str) and bool(_PROPERTY_NAME.fullmatch(key))
+extra_type = values.value_type
+"""USD value type name for a driver extra: bool, int, double, string, or double3 (``TypeError``
+for anything else, ``ValueError`` for an int outside 32 bits or a vector overflowing a double)."""
 
-
-def extra_type(value: Any) -> str:
-    """USD value type name for a driver extra: bool, int, double, string, or double3.
-
-    Raises ``TypeError`` for anything else, and ``ValueError`` for a value the USD type cannot
-    hold (an ``int`` outside the signed 32-bit range, or a vector component too large for a
-    double).
-    """
-    if isinstance(value, bool):
-        return "bool"
-    if isinstance(value, int):
-        if not INT32_MIN <= value <= INT32_MAX:
-            raise ValueError(f"extras int {value} is outside the 32-bit range of a USD int")
-        return "int"
-    if isinstance(value, float):
-        return "double"
-    if isinstance(value, str):
-        return "string"
-    if _is_number_triple(value):
-        _as_doubles(value)
-        return "double3"
-    raise TypeError(f"unsupported extras value {value!r} ({type(value).__name__})")
-
-
-def _is_number_triple(value: Any) -> bool:
-    return (
-        isinstance(value, (tuple, list))
-        and len(value) == 3
-        and all(isinstance(c, (int, float)) and not isinstance(c, bool) for c in value)
-    )
-
-
-def _as_doubles(value: Sequence[float]) -> Vec3:
-    try:
-        return (float(value[0]), float(value[1]), float(value[2]))
-    except OverflowError:
-        raise ValueError(f"extras vector {value!r} has a component too large for a double") from None
-
-
-def normalize_color(value: Sequence[float]) -> Vec3:
-    """Validate the reserved ``color`` extra: three numbers in ``[0, 1]``."""
-    if not _is_number_triple(value):
-        raise ValueError(f"extras 'color' must be three numbers in [0, 1], got {value!r}")
-    color = _as_doubles(value)
-    if not all(0.0 <= c <= 1.0 for c in color):
-        raise ValueError(f"extras 'color' must be three numbers in [0, 1], got {value!r}")
-    return color
+normalize_color = values.normalize_color
+"""Validate the reserved ``color`` extra: three numbers in ``[0, 1]``."""
