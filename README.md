@@ -2,7 +2,7 @@
 
 **Viron USD** is a **flight recorder for Viron worlds** — it captures a [Viron](https://github.com/Preponderous-Software/viron)-backed simulation once per tick and writes it as an [OpenUSD](https://openusd.org) stage whose attributes are **time-sampled**, so a whole run can be scrubbed and replayed in `usdview` or Blender's timeline.
 
-> **Status: in development.** The MVP is being built milestone by milestone (see [MVP.md § Milestones](MVP.md#-milestones)). The package scaffold and CI are in place; the recorder itself is not usable yet.
+> **Status: in development.** The MVP is being built milestone by milestone (see [MVP.md § Milestones](MVP.md#-milestones)). Recording works (driven mode and `viron-usd record`, one layer per run); chunked layers, `flatten`, the real-Viron integration suite, and the playback demo are still to come.
 
 ---
 
@@ -83,6 +83,45 @@ viron-usd/
  ├── MVP.md  
  ├── ARCHITECTURE.md  
  └── README.md           # This file  
+
+---
+
+## ▶️ Usage
+
+Viron needs a JWT bearer token (HS256, signed with the Viron instance's `JWT_SECRET`, `iss` matching its `JWT_ISSUER`). Pass it with `--token` or the `VIRON_TOKEN` environment variable. The recorder only sends `GET` requests.
+
+### Driven mode (recommended)
+
+A simulation that drives Viron calls `capture(tick)` after each of its ticks, so every snapshot is consistent:
+
+```python
+from viron_usd.client import VironClient
+from viron_usd.recorder import Recorder
+
+client = VironClient("http://localhost:9999", token="...")
+with Recorder.create(client, environment_id=1, out_dir="runs/demo") as recorder:
+    for tick in range(100):
+        step_simulation()                      # the driver's own writes to Viron
+        recorder.capture(tick)                 # GET-only snapshot, written at time code `tick`
+        # optional per-entity extras, time-sampled as `extras:<key>`; `color` drives displayColor:
+        # recorder.capture(tick, extras={7: {"color": (0.9, 0.2, 0.1), "category": "wolf"}})
+# -> runs/demo/run.usda
+```
+
+Ticks must increase from call to call. `Recorder.create(..., binary=True)` writes `run.usdc` instead.
+
+### Poll mode
+
+For a driver that cannot call in, `viron-usd record` captures on a wall-clock interval, numbering ticks from 0:
+
+```bash
+export VIRON_TOKEN=...
+viron-usd record --environment 1 --interval 0.5 --ticks 200 --out runs/poll
+# --viron-url (default http://localhost:9999), --ticks-per-second (playback rate, default 10),
+# --binary (write run.usdc). Without --ticks it records until Ctrl-C, then saves the stage.
+```
+
+Poll-mode snapshots can be torn while the driver is writing; torn ticks that a retry does not resolve are listed in the layer's `customLayerData` under `vironUsd:tornTicks`.
 
 ---
 

@@ -7,10 +7,14 @@ ARCHITECTURE.md § Viron → USD mapping.
 
 from __future__ import annotations
 
+import logging
+
 from pxr import Gf, Sdf, Usd, UsdGeom, Vt
 
 from . import __version__, mapping
 from .snapshot import WorldLayout
+
+log = logging.getLogger(__name__)
 
 CELL_COLOR = (0.55, 0.55, 0.55)
 MISSING_LOCATION = -1
@@ -144,7 +148,7 @@ class _Track:
 
 
 class _Entity:
-    __slots__ = ("prim", "translate", "visibility", "name", "extras")
+    __slots__ = ("prim", "translate", "visibility", "name", "extras", "extra_types", "color")
 
     def __init__(self, prim: Usd.Prim, translate: _Track, visibility: _Track, name: _Track):
         self.prim = prim
@@ -152,16 +156,33 @@ class _Entity:
         self.visibility = visibility
         self.name = name
         self.extras: dict[str, _Track] = {}
+        self.extra_types: dict[str, str] = {}
+        self.color: _Track | None = None
 
     def tracks(self):
         yield self.translate
         yield self.visibility
         yield self.name
         yield from self.extras.values()
+        if self.color is not None:
+            yield self.color
 
 
 def _vec3d(value) -> Gf.Vec3d:
     return Gf.Vec3d(*value)
+
+
+def _color_array(value) -> Vt.Vec3fArray:
+    return Vt.Vec3fArray([Gf.Vec3f(*value)])
+
+
+_EXTRA_SDF_TYPES = {
+    "bool": (Sdf.ValueTypeNames.Bool, bool),
+    "int": (Sdf.ValueTypeNames.Int, int),
+    "double": (Sdf.ValueTypeNames.Double, float),
+    "string": (Sdf.ValueTypeNames.String, str),
+    "double3": (Sdf.ValueTypeNames.Double3, _vec3d),
+}
 
 
 class TimeSampledWriter:
@@ -241,6 +262,7 @@ class TimeSampledWriter:
         tick = int(snapshot.tick)
         if self.last_tick is not None and tick <= self.last_tick:
             raise ValueError(f"tick {tick} is not after the previous tick {self.last_tick}")
+        self._validate_extras(snapshot)
         previous = self.last_tick
         if self.first_tick is None:
             self.first_tick = tick
@@ -267,8 +289,73 @@ class TimeSampledWriter:
                 # interpolate towards wherever the entity is next placed.
                 entity.translate.hold(tick)
                 entity.name.hold(tick)
+        self._write_extras(snapshot, tick, previous)
         if snapshot.warnings:
             self._torn[str(tick)] = "; ".join(snapshot.warnings)
+
+    # -- driver extras (ARCHITECTURE.md § Optional per-entity extras) -----------------------
+
+    def _validate_extras(self, snapshot) -> None:
+        """Reject bad extras before anything of the tick is written, so a failed write leaves
+        the stage unchanged."""
+        for entity_id, values in (snapshot.extras or {}).items():
+            if entity_id not in snapshot.entities:
+                continue
+            known = self._entities[entity_id].extra_types if entity_id in self._entities else {}
+            for key, value in values.items():
+                if not mapping.is_valid_extra_key(key):
+                    raise ValueError(f"extras key {key!r} is not a valid USD property name")
+                if key == mapping.COLOR_KEY:
+                    mapping.normalize_color(value)
+                    continue
+                type_name = mapping.extra_type(value)
+                if key in known and known[key] != type_name:
+                    raise ValueError(
+                        f"extras key {key!r} of entity {entity_id} changed type from {known[key]} to {type_name}"
+                    )
+
+    def _write_extras(self, snapshot, tick: int, previous: int | None) -> None:
+        extras = snapshot.extras or {}
+        for entity_id in sorted(extras):
+            if entity_id not in snapshot.entities:
+                log.warning("tick %s: extras for entity %s ignored: not placed in the environment", tick, entity_id)
+                continue
+            entity = self._entities[entity_id]
+            for key, value in extras[entity_id].items():
+                if key == mapping.COLOR_KEY:
+                    self._observe_color(entity, entity_id, tick, previous, mapping.normalize_color(value))
+                else:
+                    self._observe_extra(entity, entity_id, tick, previous, key, value)
+        # Values not given this tick keep their last value, exactly.
+        for entity_id, entity in self._entities.items():
+            given = extras.get(entity_id, {}) if entity_id in snapshot.entities else {}
+            for key, track in entity.extras.items():
+                if key not in given:
+                    track.hold(tick)
+            if entity.color is not None and mapping.COLOR_KEY not in given:
+                entity.color.hold(tick)
+
+    def _observe_extra(self, entity: _Entity, entity_id: int, tick: int, previous, key: str, value) -> None:
+        type_name = mapping.extra_type(value)  # validated in _validate_extras
+        if type_name == "double3":
+            value = tuple(float(c) for c in value)
+        track = entity.extras.get(key)
+        if track is None:
+            sdf_type, convert = _EXTRA_SDF_TYPES[type_name]
+            attr = entity.prim.CreateAttribute(f"extras:{key}", sdf_type, custom=True)
+            track = entity.extras[key] = _Track(attr, convert)
+            entity.extra_types[key] = type_name
+        track.observe(tick, value)
+
+    def _observe_color(self, entity: _Entity, entity_id: int, tick: int, previous, color) -> None:
+        if entity.color is None:
+            geom = UsdGeom.Cube(self.stage.GetPrimAtPath(mapping.entity_geom_path(self.layout.environment_id, entity_id)))
+            entity.color = _Track(geom.GetDisplayColorAttr(), _color_array)
+            if previous is not None:
+                # The hash colour applies until the first driver colour; without this sample the
+                # first driver colour would hold backwards to the start of the range.
+                entity.color.observe(previous, mapping.entity_color(entity_id))
+        entity.color.observe(tick, color)
 
     # -- end ----------------------------------------------------------------------------
 
