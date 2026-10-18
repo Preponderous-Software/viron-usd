@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "viron-usd"
+version = "0.1.0"
+description = "A flight recorder for Viron worlds: records a Viron-backed simulation tick by tick as a time-sampled OpenUSD stage."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Daniel McCoy Stephenson" }]
+requires-python = ">=3.10"
+dependencies = [
+    # Pinned exactly: value-clip behaviour is what the tests assert (ARCHITECTURE.md § Dependencies).
+    "usd-core==26.8",
+    "requests>=2.32",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "PyJWT>=2.10",
+]
+
+[project.scripts]
+viron-usd = "viron_usd.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Preponderous-Software/viron-usd"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: needs a real Viron started locally with Docker Compose (run with -m integration)",
+]
