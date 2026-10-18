@@ -1,6 +1,6 @@
 # Concept — Viron USD
 
-> Status: planning. Facts about Viron below are cited against
+> Status: MVP implemented (see the [README](README.md)). Facts about Viron below are cited against
 > [`Preponderous-Software/viron@c0a6fc5`](https://github.com/Preponderous-Software/viron/tree/c0a6fc54b66ddab63a9c90f4858fced55ea68e82)
 > (the `main` branch head on 2026-10-17).
 
