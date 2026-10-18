@@ -15,7 +15,7 @@ import math
 from pathlib import Path
 from typing import Callable
 
-from pxr import Sdf, Usd, UsdUtils
+from pxr import Gf, Sdf, Usd, UsdUtils, Vt
 
 from . import mapping
 from .snapshot import WorldLayout
@@ -95,7 +95,10 @@ class ChunkedWriter:
             self._finish_current()
             self._refresh_pending = True
         if self._refresh_pending and self.refresh_layout is not None:
-            self.layout = self.refresh_layout()  # retried on the next attempt if it raises
+            # Retried on the next attempt if it raises. Grids seen earlier keep their index, so
+            # their origins (and every position already recorded on them) do not move, and a
+            # grid removed mid-run keeps its plane in the stitched scene.
+            self.layout = self.layout.merged_with(self.refresh_layout())
         self._refresh_pending = False
         path = self.out_dir / chunk_name(len(self.chunk_paths), self.binary)
         self.chunk_paths.append(path)
@@ -162,6 +165,9 @@ def stitch(root_path: Path, chunk_paths: list[Path], layout: WorldLayout, ticks_
 
 
 def _patch_manifest_visibility(manifest: Sdf.Layer, environment_id: int) -> None:
+    """Manifest defaults used while a clip has no samples for an entity: ``invisible`` (late
+    arrivals stay hidden) and, where a driver colour is animated, the id-hash colour (so chunks
+    before the first driver colour keep it; defaults inside clip layers are ignored)."""
     entities = manifest.GetPrimAtPath(mapping.entities_path(environment_id))
     if entities is None:
         return
@@ -170,6 +176,11 @@ def _patch_manifest_visibility(manifest: Sdf.Layer, environment_id: int) -> None
         if attr is None:
             attr = Sdf.AttributeSpec(child, "visibility", Sdf.ValueTypeNames.Token, Sdf.VariabilityVarying)
         attr.default = INVISIBLE
+        geom = child.nameChildren.get("geom")
+        color = geom.attributes.get("primvars:displayColor") if geom is not None else None
+        if color is not None and child.name.startswith("e_"):
+            entity_id = int(child.name[2:])
+            color.default = Vt.Vec3fArray([Gf.Vec3f(*mapping.entity_color(entity_id))])
 
 
 # -- flatten -----------------------------------------------------------------------------------

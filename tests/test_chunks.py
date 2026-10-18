@@ -316,6 +316,43 @@ def test_failed_layout_refresh_is_retried(tmp_path):
     with pytest.raises(RuntimeError):
         w.begin_tick(2)
     w.write(snap(LAYOUT, 2, {1: (2, 0, 0)}))  # retried refresh picks up grid 2
-    assert calls["n"] == 2 and w.layout is LAYOUT
+    assert calls["n"] == 2 and [g.grid_id for g in w.layout.grids] == [1, 2]
     w.close()
     assert Usd.Stage.Open(str(w.root_path)).GetPrimAtPath(mapping.cells_path(E, 2)).IsValid()
+
+
+def test_hash_color_kept_in_chunks_before_first_driver_color(tmp_path):
+    w = ChunkedWriter(tmp_path, LAYOUT, chunk_size=3)
+    ref = TimeSampledWriter.create(tmp_path / "ref.usda", LAYOUT)
+    for t in range(7):
+        s = snap(LAYOUT, t, {1: (1, 0, 0)}, extras={1: {"color": (0.0, 0.0, 1.0)}} if t == 4 else {})
+        w.write(s)
+        ref.write(s)
+    w.close()
+    ref.close()
+    hashed = Gf.Vec3f(*mapping.entity_color(1))
+    for st in (Usd.Stage.Open(str(w.root_path)), Usd.Stage.Open(str(tmp_path / "ref.usda"))):
+        color = UsdGeom.Cube(st.GetPrimAtPath(mapping.entity_geom_path(E, 1))).GetDisplayColorAttr()
+        got = [color.Get(t)[0] for t in range(7)]
+        assert all(Gf.IsClose(c, hashed, 1e-6) for c in got[:4]), got
+        assert all(Gf.IsClose(c, Gf.Vec3f(0, 0, 1), 1e-6) for c in got[4:]), got
+
+
+def test_grid_removed_at_chunk_boundary_keeps_its_plane_and_origins(tmp_path):
+    three = make_layout(((1, 5, 5), (2, 5, 5), (3, 5, 5)))
+    without_1 = make_layout(((2, 5, 5), (3, 5, 5)))  # fetch() would re-index grid 2 to 0
+    w = ChunkedWriter(tmp_path, three, chunk_size=2, refresh_layout=lambda: without_1)
+    w.write(snap(three, 0, {1: (1, 0, 0), 2: (3, 1, 1)}))
+    w.write(snap(three, 1, {1: (1, 0, 0), 2: (3, 1, 1)}))
+    w.write(snap(w.layout, 2, {2: (3, 1, 1)}))
+    w.write(snap(w.layout, 3, {2: (3, 1, 1)}))
+    w.close()
+    assert [g.index for g in w.layout.grids] == [0, 1, 2]
+    stage = Usd.Stage.Open(str(w.root_path))
+    assert stage.GetPrimAtPath(mapping.cells_path(E, 1)).IsValid()
+    want = Gf.Vec3d(*mapping.entity_position(three.grid(3), 1, 1, 2))
+    attr = stage.GetPrimAtPath(mapping.entity_path(E, 2)).GetAttribute("xformOp:translate")
+    for t in range(4):
+        assert Gf.IsClose(attr.Get(t), want, 1e-9), t
+    grid3 = UsdGeom.Xformable(stage.GetPrimAtPath(mapping.grid_path(E, 3)))
+    assert tuple(grid3.ComputeLocalToWorldTransform(3).ExtractTranslation()) == mapping.grid_origin(three.grid(3))

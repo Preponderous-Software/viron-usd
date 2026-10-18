@@ -359,7 +359,10 @@ Implementation notes (M6): chunk *k* holds ticks `[first + k × chunk_size, firs
 where *first* is the first tick successfully written (a failed first capture does not anchor
 them); a range with no captured tick produces no chunk; the grids are re-read when a new chunk
 starts, before that tick's snapshot is taken (and re-tried on the next capture if that read
-fails). Driver extras (values, types, and the driver colour) are carried into each new chunk and
+fails). The re-read is merged into the layout already in use: grids seen earlier keep their index
+(so their origins and the positions recorded on them never move, even if a lower-numbered grid is
+removed), new grids are appended, and a removed grid keeps its plane in the stitched scene. The
+manifest also gets the id-hash colour as the default of any animated `displayColor`. Driver extras (values, types, and the driver colour) are carried into each new chunk and
 re-authored when the entity first appears in it, so an omitted key keeps its value and a type
 change is still rejected across a chunk boundary.
 `viron-usd record` chunks by default (`--chunk-size 1000`); `--chunk-size 0` writes one unchunked

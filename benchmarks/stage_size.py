@@ -69,7 +69,7 @@ def run(out: Path, ticks: int) -> list[tuple[str, int, int, float]]:
         for s in snapshots(ticks):
             cw.write(s)
         cw.close()
-        files = sorted(d.iterdir())
+        files = cw.chunk_paths + [d / n for n in ("run.usda", "run.topology.usda", "run.manifest.usda")]
         rows.append((f"chunked (1000) .{ext}", len(files), size(files), time.perf_counter() - start))
     return rows
 
