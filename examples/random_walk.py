@@ -111,24 +111,40 @@ class RandomWalkDriver:
         return {e: self.coords[loc] for e, loc in self.position.items()}
 
 
+def _positive_int(text: str) -> int:
+    value = int(text)
+    if value <= 0:
+        raise argparse.ArgumentTypeError("must be greater than 0")
+    return value
+
+
+def _non_negative_int(text: str) -> int:
+    value = int(text)
+    if value < 0:
+        raise argparse.ArgumentTypeError("must not be negative")
+    return value
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Drive a random walk on a local Viron and record it with viron-usd.")
     p.add_argument("--viron-url", default=DEFAULT_URL)
     p.add_argument("--token", default=None, help=f"JWT bearer token (default: ${TOKEN_ENV_VAR})")
-    p.add_argument("--ticks", type=int, default=200)
-    p.add_argument("--entities", type=int, default=12)
-    p.add_argument("--grids", type=int, default=1)
-    p.add_argument("--grid-size", type=int, default=12)
+    p.add_argument("--ticks", type=_positive_int, default=200)
+    p.add_argument("--entities", type=_positive_int, default=12)
+    p.add_argument("--grids", type=_positive_int, default=1)
+    p.add_argument("--grid-size", type=_positive_int, default=12)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--out", default="runs/random_walk", help="run directory (default runs/random_walk)")
-    p.add_argument("--chunk-size", type=int, default=1000, help="ticks per chunk layer; 0 = one layer")
-    p.add_argument("--ticks-per-second", type=float, default=10.0)
+    p.add_argument("--chunk-size", type=_non_negative_int, default=1000, help="ticks per chunk layer; 0 = one layer")
+    p.add_argument("--ticks-per-second", type=float, default=10.0, help="playback rate (default 10)")
     p.add_argument("--binary", action="store_true")
     return p
 
 
 def main(argv: list[str] | None = None, *, recorder_session: Any = None) -> dict:
     args = build_parser().parse_args(argv)
+    if args.entities > args.grids * args.grid_size * args.grid_size:
+        build_parser().error("more entities than locations")
     token = args.token if args.token is not None else os.environ.get(TOKEN_ENV_VAR)
     driver = RandomWalkDriver(args.viron_url, token, seed=args.seed)
     env = driver.create_world(f"random-walk-{int(time.time())}", args.grids, args.grid_size)
