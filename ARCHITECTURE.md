@@ -285,7 +285,16 @@ from one `/entities/environment/{environmentId}` call per tick
 ([`EntityController.java` L46-50](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/src/main/java/preponderous/viron/controllers/EntityController.java#L46-L50)),
 so the bulk path costs 2 requests per tick rather than 1 unless the endpoint also returns names.
 
-Measuring real latency against a local Viron is part of M7; until then no throughput figure is claimed.
+Measured in M7 against a real Viron at the pinned commit (fallback path, driven mode, one
+capture per tick, timed around `Recorder.capture`):
+
+| Where | Scenario | Mean | p95 | `GET`s per capture |
+|---|---|---|---|---|
+| Local (Viron jar + PostgreSQL 12 on the same machine, 2026-10-17) | `random_walk.py`, 50 ticks, 8 entities, 1 grid | 21.0 ms | 27.7 ms | 9.1 (= 1 + 8, plus the one-off layout reads) |
+| Local (same) | scripted walk, 50 ticks, 7 entities, 2 grids, chunk size 20 | 32.7 ms | 51.5 ms | 2 + *N* |
+
+Cost grows with *G + N* as predicted; a few milliseconds per placed entity on a local machine.
+The CI job prints the same figures for its run (`pytest -m integration -s`).
 
 ## Consistency
 
@@ -422,7 +431,7 @@ smaller than text.
 | [`requests`](https://pypi.org/project/requests/) | `>=2.32` | HTTP; same floor as Viron's own Python client ([`requirements.txt`](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/requirements.txt)). |
 | [`pytest`](https://pypi.org/project/pytest/) (dev) | `>=8` | Tests. |
 | [`PyJWT`](https://pypi.org/project/PyJWT/) (dev) | `>=2.10` | Minting HS256 test tokens for the integration suite. |
-| Viron (integration/demo only) | pinned commit, starting at `c0a6fc5` | Run via its own `compose.yml` (PostgreSQL 12 + the Spring Boot service on port 9999 — [`compose.yml`](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/compose.yml)). |
+| Viron (integration/demo only) | pinned commit `c0a6fc5` (`VIRON_COMMIT` in `tests/integration/start_viron.sh`) | Built from a checkout at that commit and run with [`tests/integration/compose.yml`](tests/integration/compose.yml), which mirrors Viron's own [`compose.yml`](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/compose.yml) (PostgreSQL 12 + the Spring Boot service on port 9999) with a test secret, debug endpoints and usage reporting off, and `stringtype=unspecified` on the JDBC URL (see [Integration finding](#integration-finding-creation-dates)). |
 
 ---
 
@@ -434,9 +443,23 @@ smaller than text.
   feed synthetic `Snapshot`s and assert on the stage through the `pxr` API: resolved
   translation and `ComputeVisibility` at each integer time code, sample counts per attribute, and
   equality between chunked, unchunked, and flattened stages.
-- **Integration (marked `integration`, separate CI job):** start Viron with Docker Compose at a
-  pinned commit with `VIRON_DEBUG_ENABLED=false` and a test `JWT_SECRET`; mint a token with
-  PyJWT; run `examples/random_walk.py` for 50 ticks; assert the MVP criteria on the output.
+- **Integration (marked `integration`, separate CI job):** `tests/integration/start_viron.sh`
+  clones Viron at the pinned commit and starts it with Docker Compose (`VIRON_DEBUG_ENABLED=false`,
+  usage reporting off, a test `JWT_SECRET`); the suite mints an HS256 token with PyJWT, refuses any
+  `VIRON_URL` that is not `localhost`, runs `examples/random_walk.py` for 50 ticks plus a scripted
+  walk (a frozen entity, a paused entity, a late arrival, a removal, a rename), and asserts
+  criteria 1–5 on the output. The recorder's HTTP session fails the test on any non-`GET` request.
+
+#### Integration finding: creation dates
+
+Against the stock schema, `POST /api/v1/environments` on Viron at the pinned commit answered
+`400 Failed to create environment`: the factory binds `new java.util.Date().toString()` as a string
+([`EnvironmentFactory.java` L52-54](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/src/main/java/preponderous/viron/factories/EnvironmentFactory.java#L52-L54))
+into a `TIMESTAMP NOT NULL` column ([`create_tables.sql` L29-34](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/db-scripts/setup/create_tables.sql#L29-L34)),
+and PostgreSQL rejects a `character varying` value there. The test instance adds
+`?stringtype=unspecified` to its JDBC URL, which lets PostgreSQL parse the string as a timestamp.
+This affects only the driver's writes, not the recorder's reads, and no change to Viron is made
+from this project.
 - **Manual (documented in M8):** open the demo run in usdview and Blender and check that
   playback looks right.
 

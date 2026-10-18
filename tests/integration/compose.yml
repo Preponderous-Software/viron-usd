@@ -1,0 +1,45 @@
+# Viron + PostgreSQL for the viron-usd integration suite and the playback demo.
+#
+# Viron is built from a checkout of Preponderous-Software/viron at the commit pinned in
+# tests/integration/start_viron.sh (VIRON_COMMIT); VIRON_SRC points at that checkout.
+# Everything here is local and throwaway: a test JWT secret, debug endpoints off, usage
+# reporting off. Start it with tests/integration/start_viron.sh rather than by hand.
+
+name: viron-usd-it
+
+services:
+  postgres:
+    image: postgres:12
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - ${VIRON_SRC:?VIRON_SRC must point at a Viron checkout}/db-scripts/setup:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  viron:
+    build: ${VIRON_SRC}
+    ports:
+      - "127.0.0.1:${VIRON_PORT:-9999}:9999"
+    environment:
+      # stringtype=unspecified: Viron at the pinned commit binds creation dates as strings into
+      # TIMESTAMP columns, which PostgreSQL rejects without it ("column creation_date is of type
+      # timestamp ... but expression is of type character varying") and POST /environments fails.
+      DATABASE_DB_URL: jdbc:postgresql://postgres:5432/postgres?stringtype=unspecified
+      DATABASE_DB_USERNAME: postgres
+      DATABASE_DB_PASSWORD: postgres
+      SERVICE_VIRON_HOST: http://localhost
+      SERVICE_VIRON_PORT: "9999"
+      VIRON_DEBUG_ENABLED: "false"
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set (a test secret of at least 32 bytes)}
+      JWT_ISSUER: ${JWT_ISSUER:-viron-usd-test}
+      JWT_ALGORITHM: HS256
+      USAGE_REPORTING_ENABLED: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
