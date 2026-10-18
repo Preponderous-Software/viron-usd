@@ -2,7 +2,15 @@ import logging
 
 import pytest
 
-from viron_usd.snapshot import Placement, Snapshot, WorldLayout, take_snapshot
+from viron_usd.snapshot import (
+    GridInfo,
+    LocationInfo,
+    Placement,
+    Snapshot,
+    WorldLayout,
+    freeze_extras,
+    take_snapshot,
+)
 
 
 def world(viron, grids=1, rows=3, cols=4):
@@ -224,6 +232,38 @@ def test_layout_merge_keeps_indices_and_appends_new_grids(viron):
     merged = old.merged_with(newer)
     assert [(g.grid_id, g.index) for g in merged.grids] == [(g1, 0), (g2, 1), (g3, 2)]
     assert set(merged.locations) == set(old.locations) | set(newer.locations)
+
+
+def test_layout_merge_takes_newer_name_and_unions_location_order():
+    old = WorldLayout(
+        1, "before", (GridInfo(5, 1, 1, None, 0),), {10: LocationInfo(5, 0, 0)}, {5: (10,)}
+    )
+    newer = WorldLayout(
+        1, "after", (GridInfo(7, 1, 2, "b", 0),), {20: LocationInfo(7, 0, 0), 21: LocationInfo(7, 0, 1)}, {7: (20, 21)}
+    )
+    merged = old.merged_with(newer)
+    assert merged.environment_name == "after"
+    assert merged.grid_ids() == (5, 7)
+    assert merged.grid(7) == GridInfo(7, 1, 2, "b", 1)
+    assert dict(merged.location_order) == {5: (10,), 7: (20, 21)}
+    with pytest.raises(TypeError):
+        merged.locations[30] = LocationInfo(7, 0, 0)
+
+
+def test_layout_merge_onto_a_layout_with_no_grids_starts_at_index_zero():
+    empty = WorldLayout(1, "w", (), {})
+    newer = WorldLayout(1, "w", (GridInfo(3, 1, 1, None, 4),), {})
+    assert [(g.grid_id, g.index) for g in empty.merged_with(newer).grids] == [(3, 0)]
+
+
+def test_freeze_extras_copies_deeply_and_normalizes_keys():
+    assert dict(freeze_extras(None)) == {}
+    inner = [1, 2]
+    frozen = freeze_extras({"4": {"path": [inner, (3, [4])], "n": 1}})
+    inner.append(9)
+    assert set(frozen) == {4}
+    assert frozen[4]["path"] == ((1, 2), (3, (4,)))
+    assert frozen[4]["n"] == 1
 
 
 def test_removed_grid_answering_404_reads_as_empty(viron):

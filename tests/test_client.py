@@ -86,6 +86,55 @@ def test_503_gives_up_after_max_retries(viron):
     assert exc.value.status == 503
 
 
+def test_503_without_retry_after_backs_off_by_attempt_number(viron):
+    viron.create_environment("w", 1, 1, 1)
+    viron.inject(r"/environments/1$", 503)
+    viron.inject(r"/environments/1$", 503)
+    slept = []
+    client = viron.client(sleep=slept.append)
+    assert client.get_environment(1).name == "w"
+    assert slept == [1.0, 2.0]
+    assert client.request_count == 3
+
+
+def test_503_retries_count_every_attempt(viron):
+    for _ in range(3):
+        viron.inject(r"/environments/1$", 503)
+    client = viron.client(max_retries=2)
+    with pytest.raises(VironError):
+        client.get_environment(1)
+    assert client.request_count == 3
+
+
+def test_other_error_statuses_are_raised_without_retry(viron):
+    viron.create_environment("w", 1, 1, 1)
+    viron.inject(r"/environments/1$", 500)
+    slept = []
+    client = viron.client(sleep=slept.append)
+    with pytest.raises(VironError) as exc:
+        client.get_environment(1)
+    assert exc.value.status == 500 and not isinstance(exc.value, VironNotFound)
+    assert slept == [] and client.request_count == 1
+    assert client.get_environment(1).name == "w"
+
+
+def test_missing_names_read_as_empty_strings():
+    bodies = {
+        "/api/v1/environments/1": {"environmentId": 1, "name": None},
+        "/api/v1/entities/2": {"entityId": 2},
+        "/api/v1/entities/grid/3": [{"entityId": 4, "name": None}],
+    }
+
+    class T:
+        def get(self, url, headers, timeout):
+            return FakeResponse(200, bodies[url.replace("http://x", "")])
+
+    client = VironClient("http://x", transport=T())
+    assert client.get_environment(1).name == ""
+    assert client.get_entity(2).name == ""
+    assert [e.name for e in client.get_entities_in_grid(3)] == [""]
+
+
 def test_retry_after_parsing():
     assert _retry_after_seconds({"Retry-After": "3"}, 1.0) == 3.0
     assert _retry_after_seconds({}, 1.5) == 1.5
