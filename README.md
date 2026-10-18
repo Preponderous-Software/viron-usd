@@ -62,6 +62,7 @@ Core responsibilities:
 
 - Python 3.10+
 - [`usd-core`](https://pypi.org/project/usd-core/) (Pixar's official OpenUSD Python wheel)
+- [`usd-recorder`](https://github.com/Preponderous-Software/usd-recorder) (shared recording building blocks: sparse sampling, value clips, flatten)
 - `requests` (Viron REST API)
 - pytest (testing)
 - Docker Compose (running Viron locally for integration tests and the demo)

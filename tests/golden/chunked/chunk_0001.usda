@@ -1,0 +1,246 @@
+#usda 1.0
+(
+    customLayerData = {
+        string "vironUsd:axisConvention" = "Viron x -> USD +X, Viron y -> USD +Y, Z up; one Viron cell = 1 unit; grids side by side along X ordered by grid id"
+        int "vironUsd:environmentId" = 1
+        string "vironUsd:version" = "0.1.0"
+    }
+    defaultPrim = "World"
+    endTimeCode = 13
+    framesPerSecond = 10
+    metersPerUnit = 1
+    startTimeCode = 7
+    timeCodesPerSecond = 10
+    upAxis = "Z"
+)
+
+def Xform "World"
+{
+    custom double viron:wallClock
+    double viron:wallClock.timeSamples = {
+        7: 1000007,
+        8: 1000008,
+        9: 1000009,
+        10: 1000010,
+        11: 1000011,
+        12: 1000012,
+        13: 1000013,
+    }
+
+    def Xform "env_1"
+    {
+        def Scope "entities"
+        {
+            def Xform "e_1"
+            {
+                custom bool extras:alive
+                bool extras:alive.timeSamples = {
+                    7: 0,
+                    8: 0,
+                    9: 1,
+                    13: 1,
+                }
+                custom double extras:energy
+                double extras:energy.timeSamples = {
+                    7: 0.179,
+                    8: 0.179,
+                    9: 7.793,
+                    10: 7.793,
+                    11: 7.682,
+                    12: 5.73,
+                    13: 5.73,
+                }
+                custom int viron:entityId = 1
+                custom string viron:name
+                string viron:name.timeSamples = {
+                    7: "e1",
+                    13: "e1",
+                }
+                token visibility.timeSamples = {
+                    7: "inherited",
+                    13: "inherited",
+                }
+                double3 xformOp:translate.timeSamples = {
+                    7: (6.460012032117231, 3.748451140010369, 0.2),
+                    8: (2.460012032117232, 1.7484511400103688, 0.2),
+                    10: (2.460012032117232, 1.7484511400103688, 0.2),
+                    11: (2.460012032117232, 4.748451140010369, 0.2),
+                    12: (7.460012032117231, 2.748451140010369, 0.2),
+                    13: (7.460012032117231, 2.748451140010369, 0.2),
+                }
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+
+                def Cube "geom"
+                {
+                    float3[] extent = [(-0.2, -0.2, -0.2), (0.2, 0.2, 0.2)]
+                    color3f[] primvars:displayColor = [(0.315, 0.4966252, 0.9)]
+                    double size = 0.4
+                }
+            }
+
+            def Xform "e_2"
+            {
+                custom bool extras:alive
+                bool extras:alive.timeSamples = {
+                    7: 1,
+                    13: 1,
+                }
+                custom double extras:energy
+                double extras:energy.timeSamples = {
+                    7: 6.118,
+                    8: 6.118,
+                    9: 6.399,
+                    11: 6.399,
+                    12: 9.694,
+                    13: 1.941,
+                }
+                custom string extras:mood
+                string extras:mood.timeSamples = {
+                    7: "wary",
+                    11: "wary",
+                    12: "curious",
+                    13: "curious",
+                }
+                custom int viron:entityId = 2
+                custom string viron:name
+                string viron:name.timeSamples = {
+                    7: "e2@6",
+                    13: "e2@6",
+                }
+                token visibility.timeSamples = {
+                    7: "inherited",
+                    13: "inherited",
+                }
+                double3 xformOp:translate.timeSamples = {
+                    7: (0.6649426886380982, 1.3249365964613242, 0.2),
+                    9: (0.6649426886380982, 1.3249365964613242, 0.2),
+                    10: (9.664942688638098, 1.3249365964613242, 0.2),
+                    11: (3.6649426886380985, 0.32493659646132417, 0.2),
+                    13: (3.6649426886380985, 0.32493659646132417, 0.2),
+                }
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+
+                def Cube "geom"
+                {
+                    float3[] extent = [(-0.2, -0.2, -0.2), (0.2, 0.2, 0.2)]
+                    color3f[] primvars:displayColor = [(0.9, 0.315, 0.7503571)]
+                    double size = 0.4
+                }
+            }
+
+            def Xform "e_3"
+            {
+                custom int extras:count
+                int extras:count.timeSamples = {
+                    7: 30,
+                    8: 4,
+                    11: 4,
+                    12: 21,
+                    13: 21,
+                }
+                custom double3 extras:heading
+                double3 extras:heading.timeSamples = {
+                    7: (-0.34607876234118407, 0.33179812506734274, 0),
+                    8: (-0.4437525738354169, 0.2151090955956041, 0),
+                    11: (-0.4437525738354169, 0.2151090955956041, 0),
+                    12: (-0.868199543195578, 0.07743088094793027, 0),
+                    13: (-0.868199543195578, 0.07743088094793027, 0),
+                }
+                custom int viron:entityId = 3
+                custom string viron:name
+                string viron:name.timeSamples = {
+                    7: "e3",
+                    13: "e3",
+                }
+                token visibility.timeSamples = {
+                    7: "inherited",
+                    13: "inherited",
+                }
+                double3 xformOp:translate.timeSamples = {
+                    7: (2.4023990786290725, 3.442862377896174, 0.2),
+                    8: (2.4023990786290725, 3.442862377896174, 0.2),
+                    9: (1.4023990786290725, 3.442862377896174, 0.2),
+                    10: (9.402399078629072, 2.442862377896174, 0.2),
+                    11: (4.402399078629072, 4.442862377896175, 0.2),
+                    13: (4.402399078629072, 4.442862377896175, 0.2),
+                }
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+
+                def Cube "geom"
+                {
+                    float3[] extent = [(-0.2, -0.2, -0.2), (0.2, 0.2, 0.2)]
+                    color3f[] primvars:displayColor = [(0.315, 0.9, 0.47228423)]
+                    double size = 0.4
+                }
+            }
+
+            def Xform "e_4"
+            {
+                custom int viron:entityId = 4
+                custom string viron:name
+                string viron:name.timeSamples = {
+                    7: "e4",
+                    8: "e4",
+                    9: "e4@9",
+                    13: "e4@9",
+                }
+                token visibility.timeSamples = {
+                    7: "inherited",
+                    10: "inherited",
+                    11: "invisible",
+                    12: "inherited",
+                    13: "inherited",
+                }
+                double3 xformOp:translate.timeSamples = {
+                    7: (7.396747334778017, 1.6657495432104332, 0.2),
+                    12: (7.396747334778017, 1.6657495432104332, 0.2),
+                    13: (4.396747334778017, 4.665749543210433, 0.2),
+                }
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+
+                def Cube "geom"
+                {
+                    float3[] extent = [(-0.2, -0.2, -0.2), (0.2, 0.2, 0.2)]
+                    color3f[] primvars:displayColor = [(0.9, 0.70487976, 0.315)]
+                    color3f[] primvars:displayColor.timeSamples = {
+                        9: [(0.9, 0.70487976, 0.315)],
+                        10: [(0.9, 0.98, 0.5)],
+                        11: [(0.9, 0.98, 0.5)],
+                        12: [(0.473, 0.127, 0.5)],
+                        13: [(0.473, 0.127, 0.5)],
+                    }
+                    double size = 0.4
+                }
+            }
+
+            def Xform "e_5"
+            {
+                custom int viron:entityId = 5
+                custom string viron:name
+                string viron:name.timeSamples = {
+                    7: "e5",
+                    13: "e5",
+                }
+                token visibility.timeSamples = {
+                    7: "inherited",
+                    13: "inherited",
+                }
+                double3 xformOp:translate.timeSamples = {
+                    7: (1.717140748856389, 3.694302206380363, 0.2),
+                    10: (1.717140748856389, 3.694302206380363, 0.2),
+                    11: (7.717140748856389, 4.694302206380363, 0.2),
+                    13: (7.717140748856389, 4.694302206380363, 0.2),
+                }
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+
+                def Cube "geom"
+                {
+                    float3[] extent = [(-0.2, -0.2, -0.2), (0.2, 0.2, 0.2)]
+                    color3f[] primvars:displayColor = [(0.31701985, 0.315, 0.9)]
+                    double size = 0.4
+                }
+            }
+        }
+    }
+}
+

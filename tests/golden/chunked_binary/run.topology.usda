@@ -1,0 +1,223 @@
+#usda 1.0
+(
+    customLayerData = {
+        string "vironUsd:axisConvention" = "Viron x -> USD +X, Viron y -> USD +Y, Z up; one Viron cell = 1 unit; grids side by side along X ordered by grid id"
+        int "vironUsd:environmentId" = 1
+        dictionary "vironUsd:tornTicks" = {
+            string "21" = "entity 9 listed in grids 1 and 2"
+        }
+        string "vironUsd:version" = "0.1.0"
+    }
+    defaultPrim = "World"
+    endTimeCode = 29
+    framesPerSecond = 10
+    metersPerUnit = 1
+    startTimeCode = 0
+    timeCodesPerSecond = 10
+    upAxis = "Z"
+)
+
+def Xform "World"
+{
+    custom double viron:wallClock
+
+    def Xform "env_1"
+    {
+        custom int viron:environmentId = 1
+        custom string viron:name = "synthetic"
+
+        def Scope "entities"
+        {
+            def Xform "e_1"
+            {
+                custom bool extras:alive
+                custom double extras:energy
+                custom int viron:entityId = 1
+                custom string viron:name
+                token visibility
+                double3 xformOp:translate
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+
+                def Cube "geom"
+                {
+                    float3[] extent = [(-0.2, -0.2, -0.2), (0.2, 0.2, 0.2)]
+                    color3f[] primvars:displayColor = [(0.315, 0.4966252, 0.9)]
+                    double size = 0.4
+                }
+            }
+
+            def Xform "e_2"
+            {
+                custom bool extras:alive
+                custom double extras:energy
+                custom string extras:mood
+                custom int viron:entityId = 2
+                custom string viron:name
+                token visibility
+                double3 xformOp:translate
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+
+                def Cube "geom"
+                {
+                    float3[] extent = [(-0.2, -0.2, -0.2), (0.2, 0.2, 0.2)]
+                    color3f[] primvars:displayColor = [(0.9, 0.315, 0.7503571)]
+                    double size = 0.4
+                }
+            }
+
+            def Xform "e_3"
+            {
+                custom int extras:count
+                custom double3 extras:heading
+                custom int viron:entityId = 3
+                custom string viron:name
+                token visibility
+                double3 xformOp:translate
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+
+                def Cube "geom"
+                {
+                    float3[] extent = [(-0.2, -0.2, -0.2), (0.2, 0.2, 0.2)]
+                    color3f[] primvars:displayColor = [(0.315, 0.9, 0.47228423)]
+                    double size = 0.4
+                }
+            }
+
+            def Xform "e_4"
+            {
+                custom int viron:entityId = 4
+                custom string viron:name
+                token visibility
+                double3 xformOp:translate
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+
+                def Cube "geom"
+                {
+                    float3[] extent = [(-0.2, -0.2, -0.2), (0.2, 0.2, 0.2)]
+                    color3f[] primvars:displayColor = [(0.9, 0.70487976, 0.315)]
+                    double size = 0.4
+                }
+            }
+
+            def Xform "e_5"
+            {
+                custom int viron:entityId = 5
+                custom string viron:name
+                token visibility
+                double3 xformOp:translate
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+
+                def Cube "geom"
+                {
+                    float3[] extent = [(-0.2, -0.2, -0.2), (0.2, 0.2, 0.2)]
+                    color3f[] primvars:displayColor = [(0.31701985, 0.315, 0.9)]
+                    double size = 0.4
+                }
+            }
+
+            def Xform "e_6"
+            {
+                custom int extras:count
+                custom double3 extras:heading
+                custom int viron:entityId = 6
+                custom string viron:name
+                token visibility
+                double3 xformOp:translate
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+
+                def Cube "geom"
+                {
+                    float3[] extent = [(-0.2, -0.2, -0.2), (0.2, 0.2, 0.2)]
+                    color3f[] primvars:displayColor = [(0.78847605, 0.315, 0.9)]
+                    double size = 0.4
+                }
+            }
+
+            def Xform "e_7"
+            {
+                custom int viron:entityId = 7
+                custom string viron:name
+                token visibility
+                double3 xformOp:translate
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+
+                def Cube "geom"
+                {
+                    float3[] extent = [(-0.2, -0.2, -0.2), (0.2, 0.2, 0.2)]
+                    color3f[] primvars:displayColor = [(0.51175207, 0.9, 0.315)]
+                    double size = 0.4
+                }
+            }
+        }
+
+        def Scope "grids"
+        {
+            def Xform "grid_1"
+            {
+                custom int viron:columns = 5
+                custom int viron:gridId = 1
+                custom string viron:name = ""
+                custom int viron:rows = 5
+                double3 xformOp:translate = (0, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+
+                def Mesh "cells"
+                {
+                    uniform bool doubleSided = 1
+                    float3[] extent = [(0, 0, 0), (5, 5, 0)]
+                    int[] faceVertexCounts = [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
+                    int[] faceVertexIndices = [0, 6, 7, 1, 1, 7, 8, 2, 2, 8, 9, 3, 3, 9, 10, 4, 4, 10, 11, 5, 6, 12, 13, 7, 7, 13, 14, 8, 8, 14, 15, 9, 9, 15, 16, 10, 10, 16, 17, 11, 12, 18, 19, 13, 13, 19, 20, 14, 14, 20, 21, 15, 15, 21, 22, 16, 16, 22, 23, 17, 18, 24, 25, 19, 19, 25, 26, 20, 20, 26, 27, 21, 21, 27, 28, 22, 22, 28, 29, 23, 24, 30, 31, 25, 25, 31, 32, 26, 26, 32, 33, 27, 27, 33, 34, 28, 28, 34, 35, 29]
+                    point3f[] points = [(0, 0, 0), (0, 1, 0), (0, 2, 0), (0, 3, 0), (0, 4, 0), (0, 5, 0), (1, 0, 0), (1, 1, 0), (1, 2, 0), (1, 3, 0), (1, 4, 0), (1, 5, 0), (2, 0, 0), (2, 1, 0), (2, 2, 0), (2, 3, 0), (2, 4, 0), (2, 5, 0), (3, 0, 0), (3, 1, 0), (3, 2, 0), (3, 3, 0), (3, 4, 0), (3, 5, 0), (4, 0, 0), (4, 1, 0), (4, 2, 0), (4, 3, 0), (4, 4, 0), (4, 5, 0), (5, 0, 0), (5, 1, 0), (5, 2, 0), (5, 3, 0), (5, 4, 0), (5, 5, 0)]
+                    color3f[] primvars:displayColor = [(0.55, 0.55, 0.55)]
+                    uniform token subdivisionScheme = "none"
+                    custom int[] viron:locationIds = [1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010, 1011, 1012, 1013, 1014, 1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022, 1023, 1024, 1025]
+                }
+            }
+
+            def Xform "grid_2"
+            {
+                custom int viron:columns = 6
+                custom int viron:gridId = 2
+                custom string viron:name = ""
+                custom int viron:rows = 4
+                double3 xformOp:translate = (6, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+
+                def Mesh "cells"
+                {
+                    uniform bool doubleSided = 1
+                    float3[] extent = [(0, 0, 0), (4, 6, 0)]
+                    int[] faceVertexCounts = [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
+                    int[] faceVertexIndices = [0, 7, 8, 1, 1, 8, 9, 2, 2, 9, 10, 3, 3, 10, 11, 4, 4, 11, 12, 5, 5, 12, 13, 6, 7, 14, 15, 8, 8, 15, 16, 9, 9, 16, 17, 10, 10, 17, 18, 11, 11, 18, 19, 12, 12, 19, 20, 13, 14, 21, 22, 15, 15, 22, 23, 16, 16, 23, 24, 17, 17, 24, 25, 18, 18, 25, 26, 19, 19, 26, 27, 20, 21, 28, 29, 22, 22, 29, 30, 23, 23, 30, 31, 24, 24, 31, 32, 25, 25, 32, 33, 26, 26, 33, 34, 27]
+                    point3f[] points = [(0, 0, 0), (0, 1, 0), (0, 2, 0), (0, 3, 0), (0, 4, 0), (0, 5, 0), (0, 6, 0), (1, 0, 0), (1, 1, 0), (1, 2, 0), (1, 3, 0), (1, 4, 0), (1, 5, 0), (1, 6, 0), (2, 0, 0), (2, 1, 0), (2, 2, 0), (2, 3, 0), (2, 4, 0), (2, 5, 0), (2, 6, 0), (3, 0, 0), (3, 1, 0), (3, 2, 0), (3, 3, 0), (3, 4, 0), (3, 5, 0), (3, 6, 0), (4, 0, 0), (4, 1, 0), (4, 2, 0), (4, 3, 0), (4, 4, 0), (4, 5, 0), (4, 6, 0)]
+                    color3f[] primvars:displayColor = [(0.55, 0.55, 0.55)]
+                    uniform token subdivisionScheme = "none"
+                    custom int[] viron:locationIds = [2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
+                }
+            }
+
+            def Xform "grid_3"
+            {
+                custom int viron:columns = 3
+                custom int viron:gridId = 3
+                custom string viron:name = ""
+                custom int viron:rows = 3
+                double3 xformOp:translate = (10, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+
+                def Mesh "cells"
+                {
+                    uniform bool doubleSided = 1
+                    float3[] extent = [(0, 0, 0), (3, 3, 0)]
+                    int[] faceVertexCounts = [4, 4, 4, 4, 4, 4, 4, 4, 4]
+                    int[] faceVertexIndices = [0, 4, 5, 1, 1, 5, 6, 2, 2, 6, 7, 3, 4, 8, 9, 5, 5, 9, 10, 6, 6, 10, 11, 7, 8, 12, 13, 9, 9, 13, 14, 10, 10, 14, 15, 11]
+                    point3f[] points = [(0, 0, 0), (0, 1, 0), (0, 2, 0), (0, 3, 0), (1, 0, 0), (1, 1, 0), (1, 2, 0), (1, 3, 0), (2, 0, 0), (2, 1, 0), (2, 2, 0), (2, 3, 0), (3, 0, 0), (3, 1, 0), (3, 2, 0), (3, 3, 0)]
+                    color3f[] primvars:displayColor = [(0.55, 0.55, 0.55)]
+                    uniform token subdivisionScheme = "none"
+                    custom int[] viron:locationIds = [3001, 3002, 3003, 3004, 3005, 3006, 3007, 3008, 3009]
+                }
+            }
+        }
+    }
+}
+

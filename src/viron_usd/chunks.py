@@ -1,5 +1,8 @@
 """Chunked layers stitched with USD value clips, and ``flatten``.
 
+The clip mechanics (stitching, manifest defaults, flatten) are usd-recorder's; this module keeps
+what is specific to viron-usd: chunk naming, rotation with layout re-reads, and the static scene.
+
 A run is written as fixed-size chunk layers (``chunk_NNNN.usda``, or ``.usdc`` when binary),
 each holding only its own range of time samples and authoring its own start/end time codes.
 ``close()`` stitches them with ``UsdUtils.StitchClips`` into ``run.usda`` (plus
@@ -15,11 +18,14 @@ import math
 from pathlib import Path
 from typing import Callable
 
-from pxr import Gf, Sdf, Usd, UsdUtils, Vt
+from pxr import Gf, Sdf, Vt
+from usd_recorder import clips as recorder_clips
+from usd_recorder.clips import default_flat_path as _default_flat_path
+from usd_recorder.clips import has_clips
 
 from . import mapping
 from .snapshot import WorldLayout
-from .writer import DEFAULT_TICKS_PER_SECOND, INVISIBLE, TimeSampledWriter, configure_stage, write_static_scene
+from .writer import DEFAULT_TICKS_PER_SECOND, TimeSampledWriter, configure_stage, write_static_scene
 
 DEFAULT_CHUNK_SIZE = 1000
 ROOT_LAYER = "run.usda"
@@ -136,58 +142,46 @@ class ChunkedWriter:
 
 
 def stitch(root_path: Path, chunk_paths: list[Path], layout: WorldLayout, ticks_per_second: float) -> None:
-    """Stitch chunk layers into ``root_path`` + topology + manifest, then patch the static scene
-    into the topology layer and ``visibility = invisible`` defaults into the manifest."""
-    root_path = Path(root_path)
-    if root_path.exists():
-        root_path.unlink()
-    for generated in (UsdUtils.GenerateClipTopologyName(str(root_path)), UsdUtils.GenerateClipManifestName(str(root_path))):
-        if Path(generated).exists():
-            Path(generated).unlink()
-    root = Sdf.Layer.CreateNew(str(root_path))
-    UsdUtils.StitchClips(root, [str(p.resolve()) for p in chunk_paths], Sdf.Path(mapping.WORLD_PATH))
-    root.Save()
+    """Stitch chunk layers into ``root_path`` + topology + manifest (usd-recorder's ``stitch``,
+    which publishes the three layers atomically), with the static scene in the topology layer,
+    ``visibility = invisible`` defaults in the manifest, and the stage metadata on the root."""
 
-    topology_path = UsdUtils.GenerateClipTopologyName(str(root_path))
-    topology = Usd.Stage.Open(topology_path)
-    write_static_scene(topology, layout)
-    topology.GetRootLayer().Save()
+    def topology(stage) -> None:
+        write_static_scene(stage, layout)
 
-    manifest = Sdf.Layer.FindOrOpen(UsdUtils.GenerateClipManifestName(str(root_path)))
-    _patch_manifest_visibility(manifest, layout.environment_id)
-    manifest.Save()
+    def manifest(layer: Sdf.Layer) -> None:
+        _patch_manifest_visibility(layer, layout.environment_id)
 
-    stage = Usd.Stage.Open(str(root_path))
-    configure_stage(stage, layout)
-    stage.SetTimeCodesPerSecond(ticks_per_second)
-    stage.SetFramesPerSecond(ticks_per_second)
-    stage.GetRootLayer().Save()
+    def root(stage) -> None:
+        configure_stage(stage, layout)
+        stage.SetTimeCodesPerSecond(ticks_per_second)
+        stage.SetFramesPerSecond(ticks_per_second)
+
+    recorder_clips.stitch(
+        root_path, chunk_paths, mapping.WORLD_PATH, topology=topology, manifest=manifest, root=root
+    )
 
 
 def _patch_manifest_visibility(manifest: Sdf.Layer, environment_id: int) -> None:
     """Manifest defaults used while a clip has no samples for an entity: ``invisible`` (late
     arrivals stay hidden) and, where a driver colour is animated, the id-hash colour (so chunks
     before the first driver colour keep it; defaults inside clip layers are ignored)."""
-    entities = manifest.GetPrimAtPath(mapping.entities_path(environment_id))
-    if entities is None:
+    entities_path = mapping.entities_path(environment_id)
+    if not recorder_clips.default_invisible(manifest, entities_path):
         return
-    for child in entities.nameChildren:
-        attr = child.attributes.get("visibility")
-        if attr is None:
-            attr = Sdf.AttributeSpec(child, "visibility", Sdf.ValueTypeNames.Token, Sdf.VariabilityVarying)
-        attr.default = INVISIBLE
-        geom = child.nameChildren.get("geom")
-        color = geom.attributes.get("primvars:displayColor") if geom is not None else None
-        if color is not None and child.name.startswith("e_"):
-            entity_id = int(child.name[2:])
-            color.default = Vt.Vec3fArray([Gf.Vec3f(*mapping.entity_color(entity_id))])
+    defaults = {}
+    for child in manifest.GetPrimAtPath(entities_path).nameChildren:
+        if child.name.startswith("e_"):
+            color = Vt.Vec3fArray([Gf.Vec3f(*mapping.entity_color(int(child.name[2:])))])
+            defaults[f"{child.path}/geom.primvars:displayColor"] = color
+    recorder_clips.set_manifest_defaults(manifest, defaults)
 
 
 # -- flatten -----------------------------------------------------------------------------------
 
 
 def default_flat_path(run: str | Path, binary: bool = False) -> Path:
-    return Path(run).parent / f"run_flat.{'usdc' if binary else 'usda'}"
+    return _default_flat_path(run, binary)
 
 
 def flatten(run: str | Path, out: str | Path | None = None, *, binary: bool = False) -> Path:
@@ -195,38 +189,9 @@ def flatten(run: str | Path, out: str | Path | None = None, *, binary: bool = Fa
 
     Writes ``run_flat.usda`` next to ``run`` (``run_flat.usdc`` with ``binary``) unless ``out``
     is given; an ``out`` extension that disagrees with ``binary`` raises ``ValueError``.
+    (usd-recorder's ``flatten``, which writes atomically.)
     """
-    run = Path(run)
-    if out is None:
-        out = default_flat_path(run, binary)
-    out = Path(out)
-    ext = out.suffix.lower()
-    if ext not in (".usda", ".usdc"):
-        raise ValueError(f"output must end in .usda or .usdc, got {out.name!r}")
-    if (ext == ".usdc") != binary:
-        flag = "with" if binary else "without"
-        raise ValueError(f"output {out.name!r} disagrees with --binary (given {flag} --binary)")
-    stage = Usd.Stage.Open(str(run))
-    if stage is None:
-        raise ValueError(f"cannot open {run}")
-    flat = stage.Flatten()
-    if not flat.Export(str(out)):
-        raise OSError(f"failed to write {out}")
-    return out
-
-
-def has_clips(layer: Sdf.Layer) -> bool:
-    """Whether any prim spec in ``layer`` carries value-clip metadata."""
-    found = []
-
-    def visit(path):
-        if path.IsPrimPath():
-            spec = layer.GetPrimAtPath(path)
-            if spec is not None and spec.HasInfo("clips"):
-                found.append(path)
-
-    layer.Traverse(Sdf.Path.absoluteRootPath, visit)
-    return bool(found)
+    return recorder_clips.flatten(run, out, binary=binary)
 
 
 __all__ = [

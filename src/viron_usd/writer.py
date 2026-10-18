@@ -11,6 +11,8 @@ import logging
 import math
 
 from pxr import Gf, Sdf, Usd, UsdGeom, Vt
+from usd_recorder import Track
+from usd_recorder.values import SDF_TYPES, to_color_array, to_vec3d
 
 from . import __version__, mapping
 from .snapshot import WorldLayout
@@ -99,66 +101,26 @@ def write_static_scene(stage: Usd.Stage, layout: WorldLayout) -> None:
 
 
 # -- time-sampled entities -----------------------------------------------------------------
+#
+# Sparse sampling with hold keys is usd-recorder's ``Track`` (ARCHITECTURE.md § Sampling
+# strategy); the value types of extras are its ``SDF_TYPES``.
 
 DEFAULT_TICKS_PER_SECOND = 10.0
 VISIBLE = UsdGeom.Tokens.inherited
 INVISIBLE = UsdGeom.Tokens.invisible
 
 
-class _Track:
-    """Sparse sampling with hold keys for one attribute (ARCHITECTURE.md § Sampling strategy).
-
-    1. The first observed value is written. 2. An unchanged value is not written; its tick is
-    remembered as the pending hold. 3. On a change at tick t, the pending hold is written at its
-    tick, then the new value at t. 4. ``flush`` writes any pending hold.
-    """
-
-    __slots__ = ("attr", "value", "has_value", "pending", "convert")
-
-    def __init__(self, attr: Usd.Attribute, convert=lambda v: v):
-        self.attr = attr
-        self.value = None
-        self.has_value = False
-        self.pending: int | None = None
-        self.convert = convert
-
-    def _write(self, tick: int, value) -> None:
-        self.attr.Set(self.convert(value), Usd.TimeCode(tick))
-
-    def observe(self, tick: int, value) -> None:
-        if not self.has_value:
-            self._write(tick, value)
-            self.value, self.has_value, self.pending = value, True, None
-        elif value == self.value:
-            self.pending = tick
-        else:
-            if self.pending is not None:
-                self._write(self.pending, self.value)
-            self._write(tick, value)
-            self.value, self.pending = value, None
-
-    def hold(self, tick: int) -> None:
-        """The value is unchanged at ``tick`` without being observed (e.g. while unplaced)."""
-        if self.has_value:
-            self.pending = tick
-
-    def flush(self) -> None:
-        if self.pending is not None:
-            self._write(self.pending, self.value)
-            self.pending = None
-
-
 class _Entity:
     __slots__ = ("prim", "translate", "visibility", "name", "extras", "extra_types", "color")
 
-    def __init__(self, prim: Usd.Prim, translate: _Track, visibility: _Track, name: _Track):
+    def __init__(self, prim: Usd.Prim, translate: Track, visibility: Track, name: Track):
         self.prim = prim
         self.translate = translate
         self.visibility = visibility
         self.name = name
-        self.extras: dict[str, _Track] = {}
+        self.extras: dict[str, Track] = {}
         self.extra_types: dict[str, str] = {}
-        self.color: _Track | None = None
+        self.color: Track | None = None
 
     def tracks(self):
         yield self.translate
@@ -167,23 +129,6 @@ class _Entity:
         yield from self.extras.values()
         if self.color is not None:
             yield self.color
-
-
-def _vec3d(value) -> Gf.Vec3d:
-    return Gf.Vec3d(*value)
-
-
-def _color_array(value) -> Vt.Vec3fArray:
-    return Vt.Vec3fArray([Gf.Vec3f(*value)])
-
-
-_EXTRA_SDF_TYPES = {
-    "bool": (Sdf.ValueTypeNames.Bool, bool),
-    "int": (Sdf.ValueTypeNames.Int, int),
-    "double": (Sdf.ValueTypeNames.Double, float),
-    "string": (Sdf.ValueTypeNames.String, str),
-    "double3": (Sdf.ValueTypeNames.Double3, _vec3d),
-}
 
 
 class TimeSampledWriter:
@@ -220,7 +165,7 @@ class TimeSampledWriter:
         stage.SetTimeCodesPerSecond(self.ticks_per_second)
         stage.SetFramesPerSecond(self.ticks_per_second)
         world = stage.GetPrimAtPath(mapping.WORLD_PATH)
-        self._wall_clock = _Track(
+        self._wall_clock = Track(
             world.CreateAttribute("viron:wallClock", Sdf.ValueTypeNames.Double, custom=True)
         )
         self._entities: dict[int, _Entity] = {}
@@ -250,9 +195,9 @@ class TimeSampledWriter:
         cube.CreateDisplayColorAttr(Vt.Vec3fArray([Gf.Vec3f(*mapping.entity_color(entity_id))]))
         entity = _Entity(
             prim,
-            _Track(translate.GetAttr(), _vec3d),
-            _Track(xform.CreateVisibilityAttr()),
-            _Track(prim.CreateAttribute("viron:name", Sdf.ValueTypeNames.String, custom=True)),
+            Track(translate.GetAttr(), to_vec3d),
+            Track(xform.CreateVisibilityAttr()),
+            Track(prim.CreateAttribute("viron:name", Sdf.ValueTypeNames.String, custom=True)),
         )
         self._entities[entity_id] = entity
         return entity
@@ -351,16 +296,16 @@ class TimeSampledWriter:
             value = tuple(float(c) for c in value)
         track = entity.extras.get(key)
         if track is None:
-            sdf_type, convert = _EXTRA_SDF_TYPES[type_name]
+            sdf_type, convert = SDF_TYPES[type_name]
             attr = entity.prim.CreateAttribute(f"extras:{key}", sdf_type, custom=True)
-            track = entity.extras[key] = _Track(attr, convert)
+            track = entity.extras[key] = Track(attr, convert)
             entity.extra_types[key] = type_name
         track.observe(tick, value)
 
     def _observe_color(self, entity: _Entity, entity_id: int, tick: int, previous, color) -> None:
         if entity.color is None:
             geom = UsdGeom.Cube(self.stage.GetPrimAtPath(mapping.entity_geom_path(self.layout.environment_id, entity_id)))
-            entity.color = _Track(geom.GetDisplayColorAttr(), _color_array)
+            entity.color = Track(geom.GetDisplayColorAttr(), to_color_array)
             if previous is not None:
                 # The hash colour applies until the first driver colour; without this sample the
                 # first driver colour would hold backwards to the start of the range.
@@ -387,14 +332,14 @@ class TimeSampledWriter:
         if not carried:
             return
         for key, value in carried.get("values", {}).items():
-            sdf_type, convert = _EXTRA_SDF_TYPES[carried["types"][key]]
+            sdf_type, convert = SDF_TYPES[carried["types"][key]]
             attr = entity.prim.CreateAttribute(f"extras:{key}", sdf_type, custom=True)
-            track = entity.extras[key] = _Track(attr, convert)
+            track = entity.extras[key] = Track(attr, convert)
             entity.extra_types[key] = carried["types"][key]
             track.observe(tick, value)
         if carried.get("color") is not None:
             geom = UsdGeom.Cube(self.stage.GetPrimAtPath(mapping.entity_geom_path(self.layout.environment_id, entity_id)))
-            entity.color = _Track(geom.GetDisplayColorAttr(), _color_array)
+            entity.color = Track(geom.GetDisplayColorAttr(), to_color_array)
             entity.color.observe(tick, carried["color"])
 
     # -- end ----------------------------------------------------------------------------
