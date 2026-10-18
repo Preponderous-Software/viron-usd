@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import time
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -105,8 +106,8 @@ class Recorder:
         """
         sleep = sleep or time.sleep
         monotonic = monotonic or time.monotonic
-        if interval < 0:
-            raise ValueError("interval must not be negative")
+        if not math.isfinite(interval) or interval < 0:
+            raise ValueError("interval must be a finite number of seconds, not negative")
         if ticks is not None and ticks < 0:
             raise ValueError("ticks must not be negative")
         tick = 0 if self.last_tick is None else self.last_tick + 1

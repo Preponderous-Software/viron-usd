@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import math
 import sys
 from pathlib import Path
 
@@ -16,6 +17,8 @@ log = logging.getLogger("viron_usd")
 
 def _positive_float(text: str) -> float:
     value = float(text)
+    if not math.isfinite(value):
+        raise argparse.ArgumentTypeError("must be a finite number")
     if value <= 0:
         raise argparse.ArgumentTypeError("must be greater than 0")
     return value
@@ -23,6 +26,8 @@ def _positive_float(text: str) -> float:
 
 def _non_negative_float(text: str) -> float:
     value = float(text)
+    if not math.isfinite(value):
+        raise argparse.ArgumentTypeError("must be a finite number")
     if value < 0:
         raise argparse.ArgumentTypeError("must not be negative")
     return value

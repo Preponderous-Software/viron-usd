@@ -126,6 +126,10 @@ def test_poll_mode_validates_arguments(viron, tmp_path):
         rec.run_polling(-1, 1)
     with pytest.raises(ValueError):
         rec.run_polling(1, -1)
+    for bad in (float("nan"), float("inf")):
+        with pytest.raises(ValueError):
+            rec.run_polling(bad, 1)
+    assert rec.captures == 0
 
 
 # -- extras ----------------------------------------------------------------------------------
@@ -211,6 +215,15 @@ def test_color_extra_drives_display_color_from_that_tick(viron, tmp_path):
     assert not attr(stage, env, a, "extras:color").IsValid()
 
 
+def test_unrepresentable_extra_leaves_tick_retryable(viron, tmp_path):
+    env, a, b, rec = _extras_world(viron, tmp_path)
+    with pytest.raises(ValueError):
+        rec.capture(0, extras={a: {"hp": 2**40}})
+    rec.capture(0, extras={a: {"hp": 5}})  # the same tick can be captured once corrected
+    rec.close()
+    assert attr(open_run(run_layer_path(tmp_path)), env, a, "extras:hp").Get(0) == 5
+
+
 def test_extras_type_change_raises_and_leaves_tick_unwritten(viron, tmp_path):
     env, a, b, rec = _extras_world(viron, tmp_path)
     rec.capture(0, extras={a: {"hp": 10}})
@@ -227,6 +240,8 @@ def test_extras_type_change_raises_and_leaves_tick_unwritten(viron, tmp_path):
         ({"color": (2, 0, 0)}, ValueError),
         ({"color": "red"}, ValueError),
         ({"thing": None}, TypeError),
+        ({"big": 2**40}, ValueError),
+        ({"vec": (10**400, 0, 0)}, ValueError),
     ],
 )
 def test_invalid_extras_are_rejected(viron, tmp_path, extras, error):
@@ -325,7 +340,12 @@ def test_record_bad_token_reports_401(cli_viron, tmp_path, capsys):
     assert rc == 1 and "401" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("bad", [["--ticks", "0"], ["--interval", "-1"], ["--ticks-per-second", "0"], []])
+@pytest.mark.parametrize(
+    "bad",
+    [["--ticks", "0"], ["--interval", "-1"], ["--ticks-per-second", "0"], [],
+     ["--interval", "nan"], ["--interval", "inf"], ["--ticks-per-second", "nan"],
+     ["--ticks-per-second", "inf"], ["--ticks-per-second", "1e309"]],
+)
 def test_record_argument_validation(bad, capsys):
     args = ["record"] + (bad + ["--environment", "1"] if bad else [])
     with pytest.raises(SystemExit) as exc:

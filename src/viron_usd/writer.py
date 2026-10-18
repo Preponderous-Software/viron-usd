@@ -8,6 +8,7 @@ ARCHITECTURE.md § Viron → USD mapping.
 from __future__ import annotations
 
 import logging
+import math
 
 from pxr import Gf, Sdf, Usd, UsdGeom, Vt
 
@@ -200,8 +201,8 @@ class TimeSampledWriter:
         ticks_per_second: float = DEFAULT_TICKS_PER_SECOND,
         static_scene: bool = True,
     ):
-        if ticks_per_second <= 0:
-            raise ValueError("ticks_per_second must be positive")
+        if not math.isfinite(ticks_per_second) or ticks_per_second <= 0:
+            raise ValueError("ticks_per_second must be a finite positive number")
         self.stage = stage
         self.layout = layout
         self.ticks_per_second = float(ticks_per_second)
