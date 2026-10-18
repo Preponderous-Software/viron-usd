@@ -81,7 +81,8 @@ says otherwise.
 6. **Rename.** Renaming an entity in Viron between two ticks changes `viron:name` from that tick on.
 7. **Chunking.** A 2,500-tick run with `--chunk-size 1000` produces exactly three chunk layers and a
    `run.usda` whose `startTimeCode`/`endTimeCode` are the first and last tick, and whose resolved
-   values equal those of the same run recorded unchunked.
+   values equal those of the same run recorded unchunked (visibility at every time code; position
+   and name wherever the entity is placed — an unplaced entity has no meaningful position).
 8. **Late arrivals.** An entity first placed in chunk 3 is invisible at every time code in chunks 1–2.
 9. **Flatten.** `viron-usd flatten run.usda -o run_flat.usda` (and, with `--binary`,
    `-o run_flat.usdc`) produces a single layer with no `clips` metadata whose resolved values

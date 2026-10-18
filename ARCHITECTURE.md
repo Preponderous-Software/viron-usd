@@ -350,14 +350,41 @@ and each per-tick file would repeat every prim declaration.
    stitched topology.
 4. **Flattening bakes clips.** `Usd.Stage.Flatten()` on the stitched stage produced one layer with
    every time sample resolved (30 samples over a 3×10-tick spike) and no clip metadata.
+5. **`StitchClips` must be able to open the clip paths it is given.** Passing `./chunk_0000.usda`
+   failed to open the layer; passing absolute paths works, and the stitched `run.usda` still
+   records them relative to itself (`@./chunk_0000.usda@`), so a run directory stays relocatable.
+   (Found while implementing M6.)
+
+Implementation notes (M6): chunk *k* holds ticks `[first + k × chunk_size, first + (k + 1) × chunk_size)`
+where *first* is the first captured tick; a range with no captured tick produces no chunk; the
+grids are re-read when a new chunk starts, before that tick's snapshot is taken.
+`viron-usd record` chunks by default (`--chunk-size 1000`); `--chunk-size 0` writes one unchunked
+layer (`run.usda`, or `run.usdc` with `--binary`) instead. While an entity is unplaced only its
+`visibility` is meaningful: an unchunked layer holds its last position and name, whereas a chunk
+recorded entirely while it was unplaced has no samples for it.
 
 ### Size
 
 Sparse sampling bounds samples by the number of *changes*, not ticks × entities. Text `.usda`
 is the default (see [Output format](#output-format)); `--binary` switches to the `.usdc` crate
-format, which stores samples in binary. Concrete numbers will be measured in M6 for a
-fixed scenario (100 entities, 10,000 ticks, 50 % of entities moving per tick), for both formats,
-and recorded in the repository, rather than estimated here.
+format, which stores samples in binary.
+
+Measured on 2026-10-17 with [`benchmarks/stage_size.py`](benchmarks/stage_size.py) (`usd-core`
+26.8, Python 3.12) for the fixed scenario: 100 entities on one 50×50 grid, 10,000 ticks, 50 % of
+the entities moving one cell per tick. Sizes are the sum of every file the run leaves on disk;
+the chunked rows include `run.usda`, the topology layer, and the manifest.
+
+| Layout | Files | Size | Write time |
+|---|---|---|---|
+| Unchunked `.usda` | 1 | 54.0 MB (51.5 MiB) | 15 s |
+| Chunked (1,000 ticks) `.usda` | 13 | 54.9 MB (52.3 MiB) | 16 s |
+| Unchunked `.usdc` (`--binary`) | 1 | 15.5 MB (14.8 MiB) | 16 s |
+| Chunked (1,000 ticks) `.usdc` (`--binary`) | 13 | 18.0 MB (17.2 MiB) | 16 s |
+
+Each moving entity costs two translate samples per tick (the hold key and the new value), so
+this scenario is close to the worst case for sparse sampling; chunking adds under 2 % in text
+and about 16 % in binary (each chunk repeats the prim declarations), and binary is about 3.5×
+smaller than text.
 
 ### Output format
 

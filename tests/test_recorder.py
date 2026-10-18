@@ -283,7 +283,7 @@ def cli_viron(viron, monkeypatch):
 def test_record_writes_usda_by_default(cli_viron, tmp_path, capsys):
     env, e, seen = cli_viron
     out = tmp_path / "run"
-    rc = cli.main(["record", "--environment", str(env), "--ticks", "3", "--interval", "0",
+    rc = cli.main(["record", "--environment", str(env), "--ticks", "3", "--interval", "0", "--chunk-size", "0",
                    "--token", "test-token", "--viron-url", "http://viron.test", "--out", str(out)])
     assert rc == 0
     assert seen == {"url": "http://viron.test", "token": "test-token"}
@@ -297,7 +297,8 @@ def test_record_writes_usda_by_default(cli_viron, tmp_path, capsys):
 def test_record_writes_usdc_with_binary(cli_viron, tmp_path):
     env, e, _ = cli_viron
     rc = cli.main(["record", "--environment", str(env), "--ticks", "2", "--interval", "0",
-                   "--token", "test-token", "--out", str(tmp_path), "--binary", "--ticks-per-second", "24"])
+                   "--token", "test-token", "--out", str(tmp_path), "--binary", "--ticks-per-second", "24",
+                   "--chunk-size", "0"])
     assert rc == 0
     path = tmp_path / "run.usdc"
     assert path.read_bytes()[:8] == b"PXR-USDC" and not (tmp_path / "run.usda").exists()
@@ -351,3 +352,53 @@ def test_record_argument_validation(bad, capsys):
     with pytest.raises(SystemExit) as exc:
         cli.main(args)
     assert exc.value.code == 2
+
+
+def test_record_is_chunked_by_default(cli_viron, tmp_path):
+    env, e, _ = cli_viron
+    assert cli.main(["record", "--environment", str(env), "--ticks", "3", "--interval", "0",
+                     "--token", "test-token", "--out", str(tmp_path)]) == 0
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "chunk_0000.usda", "run.manifest.usda", "run.topology.usda", "run.usda"]
+
+
+def test_record_chunked_binary(cli_viron, tmp_path):
+    env, e, _ = cli_viron
+    assert cli.main(["record", "--environment", str(env), "--ticks", "5", "--interval", "0", "--chunk-size", "2",
+                     "--binary", "--token", "test-token", "--out", str(tmp_path)]) == 0
+    chunks = sorted(p.name for p in tmp_path.glob("chunk_*"))
+    assert chunks == ["chunk_0000.usdc", "chunk_0001.usdc", "chunk_0002.usdc"]
+    stage = open_run(tmp_path / "run.usda")
+    assert (stage.GetStartTimeCode(), stage.GetEndTimeCode()) == (0, 4) and is_visible(stage, env, e, 4)
+
+
+def test_recorder_chunked_rereads_grids_at_chunk_boundary(viron, tmp_path):
+    env = viron.create_environment("w", 1, 3, 3)
+    e = viron.create_entity("a")
+    viron.place(e, viron.grids_of(env)[0], 0, 0)
+    rec = Recorder.create(viron.client(), env, tmp_path, chunk_size=3)
+    rec.capture(0)
+    new_grid = viron.add_grid(env, 3, 3)
+    viron.place(e, new_grid, 2, 2)
+    rec.capture(1)  # same chunk: the new grid is not known yet, so the entity is not placed in the environment
+    rec.capture(2)
+    rec.capture(3)  # next chunk: grids re-read
+    rec.close()
+    stage = open_run(tmp_path / "run.usda")
+    assert [is_visible(stage, env, e, t) for t in range(4)] == [True, False, False, True]
+    assert stage.GetPrimAtPath(mapping.cells_path(env, new_grid)).IsValid()
+    want = Gf.Vec3d(*mapping.entity_position(rec.layout.grid(new_grid), 2, 2, e))
+    assert Gf.IsClose(attr(stage, env, e, "xformOp:translate").Get(3), want, 1e-9)
+
+
+def test_flatten_command(cli_viron, tmp_path, capsys):
+    env, e, _ = cli_viron
+    assert cli.main(["record", "--environment", str(env), "--ticks", "4", "--interval", "0", "--chunk-size", "2",
+                     "--token", "test-token", "--out", str(tmp_path)]) == 0
+    assert cli.main(["flatten", str(tmp_path / "run.usda")]) == 0
+    assert (tmp_path / "run_flat.usda").exists()
+    assert cli.main(["flatten", str(tmp_path / "run.usda"), "--binary"]) == 0
+    assert (tmp_path / "run_flat.usdc").read_bytes()[:8] == b"PXR-USDC"
+    assert cli.main(["flatten", str(tmp_path / "run.usda"), "-o", str(tmp_path / "x.usdc")]) == 2
+    assert "disagrees with --binary" in capsys.readouterr().err
+    assert cli.main(["flatten", str(tmp_path / "missing.usda")]) == 1
