@@ -2,7 +2,7 @@
 
 **Viron USD** is a **flight recorder for Viron worlds** — it captures a [Viron](https://github.com/Preponderous-Software/viron)-backed simulation once per tick and writes it as an [OpenUSD](https://openusd.org) stage whose attributes are **time-sampled**, so a whole run can be scrubbed and replayed in `usdview` or Blender's timeline.
 
-> **Status: planning — not yet implemented.** This repository currently holds the design documents and the MVP issue list. No code has been written yet.
+> **Status: in development.** The MVP is being built milestone by milestone (see [MVP.md § Milestones](MVP.md#-milestones)). The package scaffold and CI are in place; the recorder itself is not usable yet.
 
 ---
 
@@ -83,6 +83,21 @@ viron-usd/
  ├── MVP.md  
  ├── ARCHITECTURE.md  
  └── README.md           # This file  
+
+---
+
+## 🧑‍💻 Development
+
+Installation is from a git checkout only (the package is not published to PyPI):
+
+```bash
+git clone https://github.com/Preponderous-Software/viron-usd.git
+cd viron-usd
+python3 -m venv .venv && . .venv/bin/activate   # Python 3.10 or newer
+pip install -e ".[dev]"
+pytest -m "not integration"
+viron-usd --help
+```
 
 ---
 
