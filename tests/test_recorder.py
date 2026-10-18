@@ -402,3 +402,6 @@ def test_flatten_command(cli_viron, tmp_path, capsys):
     assert cli.main(["flatten", str(tmp_path / "run.usda"), "-o", str(tmp_path / "x.usdc")]) == 2
     assert "disagrees with --binary" in capsys.readouterr().err
     assert cli.main(["flatten", str(tmp_path / "missing.usda")]) == 1
+    (tmp_path / "broken.usda").write_text("#usda 1.0\nthis is not usd {\n")
+    assert cli.main(["flatten", str(tmp_path / "broken.usda")]) == 1
+    assert "Traceback" not in capsys.readouterr().err

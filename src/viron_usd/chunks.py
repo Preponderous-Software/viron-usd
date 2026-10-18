@@ -62,6 +62,8 @@ class ChunkedWriter:
         self.chunk_paths: list[Path] = []
         self._writer: TimeSampledWriter | None = None
         self._chunk_index: int | None = None
+        self._carried: dict[int, dict] = {}
+        self._refresh_pending = False
         self.first_tick: int | None = None
         self.last_tick: int | None = None
         self.closed = False
@@ -80,19 +82,26 @@ class ChunkedWriter:
             raise RuntimeError("writer is closed")
         if self.last_tick is not None and tick <= self.last_tick:
             raise ValueError(f"tick {tick} is not after the previous tick {self.last_tick}")
-        if self.first_tick is None:
+        if self.last_tick is None:
+            # Anchor chunk boundaries to the first tick actually written: an attempted tick whose
+            # capture failed must not move them.
             self.first_tick = tick
+            if self._writer is not None:
+                self._chunk_index = 0
         index = self._chunk_of(tick)
         if self._writer is not None and index == self._chunk_index:
             return
         if self._writer is not None:
             self._finish_current()
-            if self.refresh_layout is not None:
-                self.layout = self.refresh_layout()
+            self._refresh_pending = True
+        if self._refresh_pending and self.refresh_layout is not None:
+            self.layout = self.refresh_layout()  # retried on the next attempt if it raises
+        self._refresh_pending = False
         path = self.out_dir / chunk_name(len(self.chunk_paths), self.binary)
         self.chunk_paths.append(path)
         self._writer = TimeSampledWriter.create(
-            path, self.layout, ticks_per_second=self.ticks_per_second, static_scene=False
+            path, self.layout, ticks_per_second=self.ticks_per_second, static_scene=False,
+            carried=self._carried,
         )
         self._chunk_index = index
 
@@ -100,6 +109,7 @@ class ChunkedWriter:
         """Close the open chunk; a chunk that received no tick (a failed capture) is dropped."""
         assert self._writer is not None
         writer, self._writer = self._writer, None
+        self._carried = writer.carry_state()
         writer.close(save=writer.first_tick is not None)
         if writer.first_tick is None:
             path = self.chunk_paths.pop()

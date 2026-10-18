@@ -36,9 +36,13 @@ def snapshots(ticks: int, seed: int = 1):
     for t in range(ticks):
         for e in rng.sample(sorted(pos), int(ENTITIES * MOVING)):
             x, y = pos[e]
-            nx = min(ROWS - 1, max(0, x + rng.choice((-1, 0, 1))))
-            ny = min(COLS - 1, max(0, y + rng.choice((-1, 1))))  # always a real move
-            pos[e] = (nx, ny)
+            neighbours = [
+                (x + dx, y + dy)
+                for dx in (-1, 0, 1)
+                for dy in (-1, 0, 1)
+                if (dx or dy) and 0 <= x + dx < ROWS and 0 <= y + dy < COLS
+            ]
+            pos[e] = rng.choice(neighbours)  # always a different cell
         placed = {e: Placement(f"e{e}", 1, x * COLS + y + 1) for e, (x, y) in pos.items()}
         yield Snapshot(t, 1_700_000_000.0 + t, MappingProxyType(placed))
 

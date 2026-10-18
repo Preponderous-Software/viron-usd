@@ -248,3 +248,74 @@ def test_chunk_with_no_tick_is_dropped(tmp_path):
     assert [p.name for p in w.chunk_paths] == ["chunk_0000.usda"]
     assert not (tmp_path / "chunk_0001.usda").exists()
     assert Usd.Stage.Open(str(w.root_path)).GetEndTimeCode() == 4
+
+
+def test_failed_first_attempt_does_not_anchor_chunk_boundaries(tmp_path):
+    w = ChunkedWriter(tmp_path, LAYOUT, chunk_size=5)
+    w.begin_tick(0)  # the capture for tick 0 then failed
+    for t in range(3, 8):
+        w.write(snap(LAYOUT, t, {1: (1, 0, 0)}))
+    w.close()
+    assert [p.name for p in w.chunk_paths] == ["chunk_0000.usda"]
+    stage = Usd.Stage.Open(str(w.root_path))
+    assert (stage.GetStartTimeCode(), stage.GetEndTimeCode()) == (3, 7)
+
+
+def test_extras_and_color_persist_across_chunk_boundaries(tmp_path):
+    w = ChunkedWriter(tmp_path, LAYOUT, chunk_size=3)
+    ref = TimeSampledWriter.create(tmp_path / "ref.usda", LAYOUT)
+    extras = {1: {"hp": 10, "kind": "wolf", "color": (0.9, 0.2, 0.1)}}
+    for t in range(9):
+        placed = {1: (1, t % 5, 0)} if t != 4 else {}  # unplaced at tick 4 (chunk 1)
+        s = snap(LAYOUT, t, placed, extras=extras if t == 1 else ({1: {"hp": 7}} if t == 7 else {}))
+        w.write(s)
+        ref.write(s)
+    w.close()
+    ref.close()
+    stage = Usd.Stage.Open(str(w.root_path))
+    flat = Usd.Stage.Open(str(tmp_path / "ref.usda"))
+    prim, rprim = (st.GetPrimAtPath(mapping.entity_path(E, 1)) for st in (stage, flat))
+    color, rcolor = (UsdGeom.Cube(st.GetPrimAtPath(mapping.entity_geom_path(E, 1))).GetDisplayColorAttr() for st in (stage, flat))
+    for t in range(1, 9):
+        if t == 4:
+            continue
+        assert prim.GetAttribute("extras:hp").Get(t) == rprim.GetAttribute("extras:hp").Get(t) == (7 if t >= 7 else 10), t
+        assert prim.GetAttribute("extras:kind").Get(t) == "wolf", t
+        assert Gf.IsClose(color.Get(t)[0], Gf.Vec3f(0.9, 0.2, 0.1), 1e-6), t
+        assert Gf.IsClose(rcolor.Get(t)[0], Gf.Vec3f(0.9, 0.2, 0.1), 1e-6), t
+
+
+def test_extras_type_change_across_chunk_boundary_raises(tmp_path):
+    w = ChunkedWriter(tmp_path, LAYOUT, chunk_size=2)
+    w.write(snap(LAYOUT, 0, {1: (1, 0, 0)}, extras={1: {"hp": 10}}))
+    w.write(snap(LAYOUT, 1, {1: (1, 0, 0)}))
+    w.write(snap(LAYOUT, 2, {1: (1, 0, 0)}))  # new chunk; hp not given
+    with pytest.raises(ValueError):
+        w.write(snap(LAYOUT, 3, {1: (1, 0, 0)}, extras={1: {"hp": 9.5}}))
+    w2 = ChunkedWriter(tmp_path / "b", LAYOUT, chunk_size=2)
+    w2.write(snap(LAYOUT, 0, {1: (1, 0, 0)}, extras={1: {"hp": 10}}))
+    w2.write(snap(LAYOUT, 1, {}))
+    w2.write(snap(LAYOUT, 2, {}))  # new chunk, entity not seen in it yet
+    with pytest.raises(ValueError):
+        w2.write(snap(LAYOUT, 3, {1: (1, 0, 0)}, extras={1: {"hp": "ten"}}))
+
+
+def test_failed_layout_refresh_is_retried(tmp_path):
+    small = make_layout(((1, 5, 5),))
+    calls = {"n": 0}
+
+    def refresh():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("viron unavailable")
+        return LAYOUT
+
+    w = ChunkedWriter(tmp_path, small, chunk_size=2, refresh_layout=refresh)
+    w.write(snap(small, 0, {}))
+    w.write(snap(small, 1, {}))
+    with pytest.raises(RuntimeError):
+        w.begin_tick(2)
+    w.write(snap(LAYOUT, 2, {1: (2, 0, 0)}))  # retried refresh picks up grid 2
+    assert calls["n"] == 2 and w.layout is LAYOUT
+    w.close()
+    assert Usd.Stage.Open(str(w.root_path)).GetPrimAtPath(mapping.cells_path(E, 2)).IsValid()

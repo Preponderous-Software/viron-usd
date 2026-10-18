@@ -146,6 +146,8 @@ def _record(args: argparse.Namespace) -> int:
 
 
 def _flatten(args: argparse.Namespace) -> int:
+    from pxr import Tf
+
     from .chunks import flatten
 
     if not Path(args.run).is_file():
@@ -153,7 +155,7 @@ def _flatten(args: argparse.Namespace) -> int:
         return 1
     try:
         out = flatten(args.run, args.output, binary=args.binary)
-    except (ValueError, OSError) as exc:
+    except (ValueError, OSError, Tf.ErrorException) as exc:
         print(f"viron-usd: error: {exc}", file=sys.stderr)
         return 2 if isinstance(exc, ValueError) else 1
     print(f"wrote {out}")

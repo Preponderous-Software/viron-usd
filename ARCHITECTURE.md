@@ -356,8 +356,12 @@ and each per-tick file would repeat every prim declaration.
    (Found while implementing M6.)
 
 Implementation notes (M6): chunk *k* holds ticks `[first + k × chunk_size, first + (k + 1) × chunk_size)`
-where *first* is the first captured tick; a range with no captured tick produces no chunk; the
-grids are re-read when a new chunk starts, before that tick's snapshot is taken.
+where *first* is the first tick successfully written (a failed first capture does not anchor
+them); a range with no captured tick produces no chunk; the grids are re-read when a new chunk
+starts, before that tick's snapshot is taken (and re-tried on the next capture if that read
+fails). Driver extras (values, types, and the driver colour) are carried into each new chunk and
+re-authored when the entity first appears in it, so an omitted key keeps its value and a type
+change is still rejected across a chunk boundary.
 `viron-usd record` chunks by default (`--chunk-size 1000`); `--chunk-size 0` writes one unchunked
 layer (`run.usda`, or `run.usdc` with `--binary`) instead. While an entity is unplaced only its
 `visibility` is meaningful: an unchunked layer holds its last position and name, whereas a chunk
@@ -371,15 +375,15 @@ format, which stores samples in binary.
 
 Measured on 2026-10-17 with [`benchmarks/stage_size.py`](benchmarks/stage_size.py) (`usd-core`
 26.8, Python 3.12) for the fixed scenario: 100 entities on one 50×50 grid, 10,000 ticks, 50 % of
-the entities moving one cell per tick. Sizes are the sum of every file the run leaves on disk;
+the entities moving to a different neighbouring cell every tick. Sizes are the sum of every file the run leaves on disk;
 the chunked rows include `run.usda`, the topology layer, and the manifest.
 
 | Layout | Files | Size | Write time |
 |---|---|---|---|
-| Unchunked `.usda` | 1 | 54.0 MB (51.5 MiB) | 15 s |
-| Chunked (1,000 ticks) `.usda` | 13 | 54.9 MB (52.3 MiB) | 16 s |
-| Unchunked `.usdc` (`--binary`) | 1 | 15.5 MB (14.8 MiB) | 16 s |
-| Chunked (1,000 ticks) `.usdc` (`--binary`) | 13 | 18.0 MB (17.2 MiB) | 16 s |
+| Unchunked `.usda` | 1 | 54.3 MB (51.8 MiB) | 23 s |
+| Chunked (1,000 ticks) `.usda` | 13 | 55.1 MB (52.6 MiB) | 22 s |
+| Unchunked `.usdc` (`--binary`) | 1 | 15.5 MB (14.8 MiB) | 15 s |
+| Chunked (1,000 ticks) `.usdc` (`--binary`) | 13 | 18.0 MB (17.2 MiB) | 20 s |
 
 Each moving entity costs two translate samples per tick (the hold key and the new value), so
 this scenario is close to the worst case for sparse sampling; chunking adds under 2 % in text
