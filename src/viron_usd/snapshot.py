@@ -72,6 +72,29 @@ class WorldLayout:
                 return grid
         raise KeyError(grid_id)
 
+    def merged_with(self, newer: "WorldLayout") -> "WorldLayout":
+        """A layout that keeps every grid of ``self`` at its index (so its origin, and the
+        positions already recorded on it, never move) and appends grids that are new in
+        ``newer`` after them. Locations are the union of both."""
+        known = {g.grid_id for g in self.grids}
+        grids = list(self.grids)
+        next_index = max((g.index for g in grids), default=-1) + 1
+        for g in newer.grids:
+            if g.grid_id not in known:
+                grids.append(GridInfo(g.grid_id, g.rows, g.columns, g.name, next_index))
+                next_index += 1
+        locations = dict(self.locations)
+        locations.update(newer.locations)
+        order = dict(self.location_order)
+        order.update(newer.location_order)
+        return WorldLayout(
+            self.environment_id,
+            newer.environment_name,
+            tuple(grids),
+            MappingProxyType(locations),
+            MappingProxyType(order),
+        )
+
     def grid_ids(self) -> tuple[int, ...]:
         return tuple(g.grid_id for g in self.grids)
 
@@ -109,7 +132,11 @@ def _fallback_placements(
     placements: dict[int, Placement] = {}
     torn: list[str] = []
     for grid in layout.grids:
-        for entity in client.get_entities_in_grid(grid.grid_id):
+        try:
+            listed = client.get_entities_in_grid(grid.grid_id)
+        except VironNotFound:
+            listed = []  # a grid removed since the layout was read holds nothing
+        for entity in listed:
             if entity.entity_id in placements:
                 torn.append(
                     f"entity {entity.entity_id} listed in grids "

@@ -26,7 +26,8 @@ class Recorder:
     """Records one Viron environment.
 
     ``writer`` is any object with ``layout``, ``write(snapshot)`` and ``close()`` — a
-    :class:`~viron_usd.writer.TimeSampledWriter` for a single layer.
+    :class:`~viron_usd.writer.TimeSampledWriter` for a single layer or a
+    :class:`~viron_usd.chunks.ChunkedWriter` for chunked layers (which also has ``begin_tick``).
 
     *Driven mode:* the simulation calls :meth:`capture` after each of its ticks, optionally with
     per-entity ``extras``. *Poll mode:* :meth:`run_polling` captures on a wall-clock interval,
@@ -60,14 +61,28 @@ class Recorder:
         *,
         ticks_per_second: float = DEFAULT_TICKS_PER_SECOND,
         binary: bool = False,
+        chunk_size: int | None = None,
         clock: Callable[[], float] = time.time,
     ) -> "Recorder":
-        """Fetch the environment's layout and record into ``out_dir/run.usda`` (``.usdc`` with
-        ``binary``)."""
+        """Fetch the environment's layout and open a writer in ``out_dir``.
+
+        Without ``chunk_size`` the run is one layer, ``out_dir/run.usda`` (``run.usdc`` with
+        ``binary``). With it, chunk layers of ``chunk_size`` ticks are stitched into
+        ``out_dir/run.usda`` on close, and the grids are re-read at every chunk boundary.
+        """
+        from .chunks import ChunkedWriter
+
         layout = WorldLayout.fetch(client, environment_id)
-        path = run_layer_path(out_dir, binary)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        writer = TimeSampledWriter.create(path, layout, ticks_per_second=ticks_per_second)
+        writer: Any
+        if chunk_size:
+            writer = ChunkedWriter(
+                out_dir, layout, chunk_size=chunk_size, ticks_per_second=ticks_per_second,
+                binary=binary, refresh_layout=lambda: WorldLayout.fetch(client, environment_id),
+            )
+        else:
+            path = run_layer_path(out_dir, binary)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            writer = TimeSampledWriter.create(path, layout, ticks_per_second=ticks_per_second)
         return cls(client, environment_id, writer, clock=clock)
 
     @property
@@ -85,6 +100,9 @@ class Recorder:
         tick = int(tick)
         if self.last_tick is not None and tick <= self.last_tick:
             raise ValueError(f"tick {tick} is not after the previous tick {self.last_tick}")
+        begin_tick = getattr(self.writer, "begin_tick", None)
+        if begin_tick is not None:
+            begin_tick(tick)  # a chunked writer may rotate and re-read the grids here
         snapshot = take_snapshot(self.client, self.layout, tick, extras=extras, clock=self.clock)
         self.writer.write(snapshot)
         self.last_tick = tick

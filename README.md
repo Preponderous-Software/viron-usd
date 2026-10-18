@@ -2,7 +2,7 @@
 
 **Viron USD** is a **flight recorder for Viron worlds** — it captures a [Viron](https://github.com/Preponderous-Software/viron)-backed simulation once per tick and writes it as an [OpenUSD](https://openusd.org) stage whose attributes are **time-sampled**, so a whole run can be scrubbed and replayed in `usdview` or Blender's timeline.
 
-> **Status: in development.** The MVP is being built milestone by milestone (see [MVP.md § Milestones](MVP.md#-milestones)). Recording works (driven mode and `viron-usd record`, one layer per run); chunked layers, `flatten`, the real-Viron integration suite, and the playback demo are still to come.
+> **Status: in development.** The MVP is being built milestone by milestone (see [MVP.md § Milestones](MVP.md#-milestones)). Recording works (driven mode, `viron-usd record` with chunked value-clip layers, and `viron-usd flatten`); the real-Viron integration suite and the playback demo are still to come.
 
 ---
 
@@ -78,6 +78,8 @@ viron-usd/
  │    └── cli.py         # `viron-usd record` / `viron-usd flatten`  
  ├── examples/  
  │    └── random_walk.py # Playback demo: entities wander a Viron grid  
+ ├── benchmarks/  
+ │    └── stage_size.py  # Stage-size measurement for ARCHITECTURE.md § Size  
  ├── tests/              # Unit tests (fake Viron) and integration tests (real Viron)  
  ├── CONCEPT.md  
  ├── MVP.md  
@@ -118,8 +120,20 @@ For a driver that cannot call in, `viron-usd record` captures on a wall-clock in
 export VIRON_TOKEN=...
 viron-usd record --environment 1 --interval 0.5 --ticks 200 --out runs/poll
 # --viron-url (default http://localhost:9999), --ticks-per-second (playback rate, default 10),
-# --binary (write run.usdc). Without --ticks it records until Ctrl-C, then saves the stage.
+# --binary (binary .usdc time-sample layers). Without --ticks it records until Ctrl-C, then saves the stage.
 ```
+
+`record` writes the run as chunk layers of `--chunk-size` ticks (default 1000) stitched into
+`runs/poll/run.usda` with USD value clips; `--chunk-size 0` writes a single layer instead. For
+tools that do not read value clips (such as Blender), bake the run into one layer:
+
+```bash
+viron-usd flatten runs/poll/run.usda                  # -> runs/poll/run_flat.usda
+viron-usd flatten runs/poll/run.usda --binary         # -> runs/poll/run_flat.usdc
+viron-usd flatten runs/poll/run.usda -o baked.usda    # explicit output (extension must match --binary)
+```
+
+In driven mode, `Recorder.create(..., chunk_size=1000)` gives the same chunked layout.
 
 Poll-mode snapshots can be torn while the driver is writing; torn ticks that a retry does not resolve are listed in the layer's `customLayerData` under `vironUsd:tornTicks`.
 

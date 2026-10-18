@@ -211,3 +211,27 @@ def test_captured_extras_are_frozen_against_later_driver_changes(viron):
         snap.extras[e]["category"] = "changed"
     with pytest.raises(TypeError):
         snap.extras[e + 2] = {}
+
+
+def test_layout_merge_keeps_indices_and_appends_new_grids(viron):
+    env, (g1, g2) = world(viron, grids=2)
+    client = viron.client()
+    old = WorldLayout.fetch(client, env)
+    g3 = viron.add_grid(env, 3, 4)
+    del viron.grids[g1]
+    newer = WorldLayout.fetch(client, env)
+    assert [g.index for g in newer.grids] == [0, 1]  # fetch re-indexes
+    merged = old.merged_with(newer)
+    assert [(g.grid_id, g.index) for g in merged.grids] == [(g1, 0), (g2, 1), (g3, 2)]
+    assert set(merged.locations) == set(old.locations) | set(newer.locations)
+
+
+def test_removed_grid_answering_404_reads_as_empty(viron):
+    env, (g1, g2) = world(viron, grids=2)
+    e = viron.create_entity("a")
+    viron.place(e, g2, 0, 0)
+    client = viron.client()
+    layout = WorldLayout.fetch(client, env)
+    viron.inject(rf"/entities/grid/{g1}$", 404)
+    snap = take_snapshot(client, layout, 0)
+    assert set(snap.entities) == {e}

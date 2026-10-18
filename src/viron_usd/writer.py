@@ -200,7 +200,11 @@ class TimeSampledWriter:
         *,
         ticks_per_second: float = DEFAULT_TICKS_PER_SECOND,
         static_scene: bool = True,
+        carried: dict | None = None,
     ):
+        """``carried`` is per-entity driver state from earlier chunks (see :meth:`carry_state`):
+        values and types of extras and the driver colour, re-authored when the entity is first
+        seen in this layer so they persist across chunk boundaries."""
         if not math.isfinite(ticks_per_second) or ticks_per_second <= 0:
             raise ValueError("ticks_per_second must be a finite positive number")
         self.stage = stage
@@ -223,6 +227,7 @@ class TimeSampledWriter:
         self.first_tick: int | None = None
         self.last_tick: int | None = None
         self._torn: dict[str, str] = {}
+        self._carried: dict[int, dict] = dict(carried or {})
         self.closed = False
 
     @classmethod
@@ -278,6 +283,7 @@ class TimeSampledWriter:
                 if previous is not None:
                     # Not placed at earlier ticks: invisible up to (and held before) this one.
                     entity.visibility.observe(previous, INVISIBLE)
+                self._apply_carried(entity, entity_id, tick)
             info = self.layout.locations[placement.location_id]
             grid = self.layout.grid(info.grid_id)
             entity.translate.observe(tick, mapping.entity_position(grid, info.x, info.y, entity_id))
@@ -302,7 +308,10 @@ class TimeSampledWriter:
         for entity_id, values in (snapshot.extras or {}).items():
             if entity_id not in snapshot.entities:
                 continue
-            known = self._entities[entity_id].extra_types if entity_id in self._entities else {}
+            if entity_id in self._entities:
+                known = self._entities[entity_id].extra_types
+            else:
+                known = self._carried.get(entity_id, {}).get("types", {})
             for key, value in values.items():
                 if not mapping.is_valid_extra_key(key):
                     raise ValueError(f"extras key {key!r} is not a valid USD property name")
@@ -357,6 +366,36 @@ class TimeSampledWriter:
                 # first driver colour would hold backwards to the start of the range.
                 entity.color.observe(previous, mapping.entity_color(entity_id))
         entity.color.observe(tick, color)
+
+    # -- state carried across chunk layers ---------------------------------------------------
+
+    def carry_state(self) -> dict[int, dict]:
+        """Driver state to carry into the next chunk: for every entity this layer has seen, its
+        extras types and last values and its last driver colour; plus whatever was carried in
+        for entities this layer never saw."""
+        state = dict(self._carried)
+        for entity_id, entity in self._entities.items():
+            state[entity_id] = {
+                "types": dict(entity.extra_types),
+                "values": {k: t.value for k, t in entity.extras.items() if t.has_value},
+                "color": entity.color.value if entity.color is not None and entity.color.has_value else None,
+            }
+        return state
+
+    def _apply_carried(self, entity: _Entity, entity_id: int, tick: int) -> None:
+        carried = self._carried.get(entity_id)
+        if not carried:
+            return
+        for key, value in carried.get("values", {}).items():
+            sdf_type, convert = _EXTRA_SDF_TYPES[carried["types"][key]]
+            attr = entity.prim.CreateAttribute(f"extras:{key}", sdf_type, custom=True)
+            track = entity.extras[key] = _Track(attr, convert)
+            entity.extra_types[key] = carried["types"][key]
+            track.observe(tick, value)
+        if carried.get("color") is not None:
+            geom = UsdGeom.Cube(self.stage.GetPrimAtPath(mapping.entity_geom_path(self.layout.environment_id, entity_id)))
+            entity.color = _Track(geom.GetDisplayColorAttr(), _color_array)
+            entity.color.observe(tick, carried["color"])
 
     # -- end ----------------------------------------------------------------------------
 
