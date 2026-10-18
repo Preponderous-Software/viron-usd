@@ -235,7 +235,8 @@ recorder.capture(tick, extras={7: {"color": (0.9, 0.2, 0.1), "category": "wolf"}
 ## Time-code scheme
 
 - **One tick = one time code.** Tick *n* is written at time code *n*. Ticks are integers and start
-  at 0 for the first capture of a run (driven mode may pass any non-decreasing integer).
+  at 0 for the first capture of a run (driven mode may pass any increasing sequence of integers;
+  a tick that is not greater than the previous one raises `ValueError`).
 - `startTimeCode` / `endTimeCode` = first / last captured tick.
 - `timeCodesPerSecond` = `framesPerSecond` = `--ticks-per-second` (default **10**), so one tick
   plays as one frame and a 1,000-tick run plays in 100 seconds.
@@ -262,8 +263,10 @@ Rule per attribute per entity:
 This gives at most two samples per change. Visibility and name follow the same rule; for them
 the hold key is harmless and keeps the logic uniform.
 
-Before an entity's first appearance, its `visibility` resolves to `invisible` (see
-[late arrivals](#late-arrivals-in-value-clips)); after its last, the final `invisible` sample is held.
+Before an entity's first appearance, its `visibility` resolves to `invisible`: within one layer the
+writer authors an `invisible` sample at the previous captured tick, which USD holds backwards to the
+start of the range; across chunks the manifest default does it (see
+[late arrivals](#late-arrivals-in-value-clips)). After its last appearance, the final `invisible` sample is held.
 
 ## Snapshot cost
 

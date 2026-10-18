@@ -91,3 +91,206 @@ def write_static_scene(stage: Usd.Stage, layout: WorldLayout) -> None:
             cells.get((x, y), MISSING_LOCATION) for x in range(grid.rows) for y in range(grid.columns)
         ]
         _cell_mesh(stage, mapping.cells_path(env_id, grid.grid_id), grid, location_ids)
+
+
+# -- time-sampled entities -----------------------------------------------------------------
+
+DEFAULT_TICKS_PER_SECOND = 10.0
+VISIBLE = UsdGeom.Tokens.inherited
+INVISIBLE = UsdGeom.Tokens.invisible
+
+
+class _Track:
+    """Sparse sampling with hold keys for one attribute (ARCHITECTURE.md § Sampling strategy).
+
+    1. The first observed value is written. 2. An unchanged value is not written; its tick is
+    remembered as the pending hold. 3. On a change at tick t, the pending hold is written at its
+    tick, then the new value at t. 4. ``flush`` writes any pending hold.
+    """
+
+    __slots__ = ("attr", "value", "has_value", "pending", "convert")
+
+    def __init__(self, attr: Usd.Attribute, convert=lambda v: v):
+        self.attr = attr
+        self.value = None
+        self.has_value = False
+        self.pending: int | None = None
+        self.convert = convert
+
+    def _write(self, tick: int, value) -> None:
+        self.attr.Set(self.convert(value), Usd.TimeCode(tick))
+
+    def observe(self, tick: int, value) -> None:
+        if not self.has_value:
+            self._write(tick, value)
+            self.value, self.has_value, self.pending = value, True, None
+        elif value == self.value:
+            self.pending = tick
+        else:
+            if self.pending is not None:
+                self._write(self.pending, self.value)
+            self._write(tick, value)
+            self.value, self.pending = value, None
+
+    def hold(self, tick: int) -> None:
+        """The value is unchanged at ``tick`` without being observed (e.g. while unplaced)."""
+        if self.has_value:
+            self.pending = tick
+
+    def flush(self) -> None:
+        if self.pending is not None:
+            self._write(self.pending, self.value)
+            self.pending = None
+
+
+class _Entity:
+    __slots__ = ("prim", "translate", "visibility", "name", "extras")
+
+    def __init__(self, prim: Usd.Prim, translate: _Track, visibility: _Track, name: _Track):
+        self.prim = prim
+        self.translate = translate
+        self.visibility = visibility
+        self.name = name
+        self.extras: dict[str, _Track] = {}
+
+    def tracks(self):
+        yield self.translate
+        yield self.visibility
+        yield self.name
+        yield from self.extras.values()
+
+
+def _vec3d(value) -> Gf.Vec3d:
+    return Gf.Vec3d(*value)
+
+
+class TimeSampledWriter:
+    """Owns one ``Usd.Stage``: writes the static scene once, then one ``write(snapshot)`` per tick.
+
+    Positions, presence (``visibility``), and names are written sparsely with hold keys; one tick
+    is one time code. ``close()`` flushes pending holds, sets the stage time range, and saves.
+    """
+
+    def __init__(
+        self,
+        stage: Usd.Stage,
+        layout: WorldLayout,
+        *,
+        ticks_per_second: float = DEFAULT_TICKS_PER_SECOND,
+        static_scene: bool = True,
+    ):
+        if ticks_per_second <= 0:
+            raise ValueError("ticks_per_second must be positive")
+        self.stage = stage
+        self.layout = layout
+        self.ticks_per_second = float(ticks_per_second)
+        if static_scene:
+            write_static_scene(stage, layout)
+        else:
+            configure_stage(stage, layout)
+            env_id = layout.environment_id
+            UsdGeom.Xform.Define(stage, mapping.environment_path(env_id))
+            UsdGeom.Scope.Define(stage, mapping.entities_path(env_id))
+        stage.SetTimeCodesPerSecond(self.ticks_per_second)
+        stage.SetFramesPerSecond(self.ticks_per_second)
+        world = stage.GetPrimAtPath(mapping.WORLD_PATH)
+        self._wall_clock = _Track(
+            world.CreateAttribute("viron:wallClock", Sdf.ValueTypeNames.Double, custom=True)
+        )
+        self._entities: dict[int, _Entity] = {}
+        self.first_tick: int | None = None
+        self.last_tick: int | None = None
+        self._torn: dict[str, str] = {}
+        self.closed = False
+
+    @classmethod
+    def create(cls, path, layout: WorldLayout, **kwargs) -> "TimeSampledWriter":
+        """Create a new layer at ``path`` (``.usda`` text or ``.usdc`` binary by extension)."""
+        return cls(Usd.Stage.CreateNew(str(path)), layout, **kwargs)
+
+    # -- entity prims -------------------------------------------------------------------
+
+    def _define_entity(self, entity_id: int) -> _Entity:
+        env_id = self.layout.environment_id
+        xform = UsdGeom.Xform.Define(self.stage, mapping.entity_path(env_id, entity_id))
+        translate = xform.AddTranslateOp()
+        prim = xform.GetPrim()
+        prim.CreateAttribute("viron:entityId", Sdf.ValueTypeNames.Int, custom=True).Set(int(entity_id))
+        cube = UsdGeom.Cube.Define(self.stage, mapping.entity_geom_path(env_id, entity_id))
+        cube.CreateSizeAttr(mapping.ENTITY_SIZE)
+        half = mapping.ENTITY_SIZE / 2
+        cube.CreateExtentAttr(Vt.Vec3fArray([Gf.Vec3f(-half), Gf.Vec3f(half)]))
+        cube.CreateDisplayColorAttr(Vt.Vec3fArray([Gf.Vec3f(*mapping.entity_color(entity_id))]))
+        entity = _Entity(
+            prim,
+            _Track(translate.GetAttr(), _vec3d),
+            _Track(xform.CreateVisibilityAttr()),
+            _Track(prim.CreateAttribute("viron:name", Sdf.ValueTypeNames.String, custom=True)),
+        )
+        self._entities[entity_id] = entity
+        return entity
+
+    def entity_ids(self) -> list[int]:
+        return sorted(self._entities)
+
+    # -- per tick -----------------------------------------------------------------------
+
+    def write(self, snapshot) -> None:
+        if self.closed:
+            raise RuntimeError("writer is closed")
+        tick = int(snapshot.tick)
+        if self.last_tick is not None and tick <= self.last_tick:
+            raise ValueError(f"tick {tick} is not after the previous tick {self.last_tick}")
+        previous = self.last_tick
+        if self.first_tick is None:
+            self.first_tick = tick
+        self.last_tick = tick
+
+        self._wall_clock.observe(tick, float(snapshot.wall_clock))
+        for entity_id in sorted(snapshot.entities):
+            placement = snapshot.entities[entity_id]
+            entity = self._entities.get(entity_id)
+            if entity is None:
+                entity = self._define_entity(entity_id)
+                if previous is not None:
+                    # Not placed at earlier ticks: invisible up to (and held before) this one.
+                    entity.visibility.observe(previous, INVISIBLE)
+            info = self.layout.locations[placement.location_id]
+            grid = self.layout.grid(info.grid_id)
+            entity.translate.observe(tick, mapping.entity_position(grid, info.x, info.y, entity_id))
+            entity.visibility.observe(tick, VISIBLE)
+            entity.name.observe(tick, placement.name)
+        for entity_id, entity in self._entities.items():
+            if entity_id not in snapshot.entities:
+                entity.visibility.observe(tick, INVISIBLE)
+                # Keep the last position and name exactly while unplaced, so they do not
+                # interpolate towards wherever the entity is next placed.
+                entity.translate.hold(tick)
+                entity.name.hold(tick)
+        if snapshot.warnings:
+            self._torn[str(tick)] = "; ".join(snapshot.warnings)
+
+    # -- end ----------------------------------------------------------------------------
+
+    def flush(self) -> None:
+        """Write every pending hold key, so final values hold through the end of the range."""
+        self._wall_clock.flush()
+        for entity in self._entities.values():
+            for track in entity.tracks():
+                track.flush()
+
+    def close(self, save: bool = True) -> None:
+        if self.closed:
+            return
+        self.flush()
+        if self.first_tick is not None:
+            self.stage.SetStartTimeCode(self.first_tick)
+            self.stage.SetEndTimeCode(self.last_tick)
+        if self._torn:
+            layer = self.stage.GetRootLayer()
+            data = dict(layer.customLayerData)
+            data["vironUsd:tornTicks"] = dict(self._torn)
+            layer.customLayerData = data
+        if save:
+            self.stage.GetRootLayer().Save()
+        self.closed = True
