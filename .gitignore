@@ -221,3 +221,7 @@ __marimo__/
 
 # viron-usd: recorded runs (default output directory of `viron-usd record`)
 runs/
+
+# local Viron checkout used by tests/integration/start_viron.sh
+.viron-src/
+runs/
