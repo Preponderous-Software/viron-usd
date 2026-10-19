@@ -121,9 +121,9 @@ Two options were evaluated.
 |---|---|
 | `client.py` | `VironClient`: thin `requests` wrapper over the `GET` endpoints above, plus the bulk placement read when the Viron instance provides it (probed through `supports_bulk_placements()`, which answers `False` until the endpoint's path and shape are defined; see [Snapshot cost](#snapshot-cost)). Its transport interface has a `get` method only — no HTTP method parameter; bearer token from `--token` or `VIRON_TOKEN`; timeouts and retry on `503` + `Retry-After` (Viron answers lock-wait overruns that way — [README § Database pool and lock wait](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/README.md#database-pool-and-lock-wait)). Its transport is injectable so tests can substitute a fake Viron. |
 | `snapshot.py` | `Snapshot` (frozen dataclass): `tick`, `wall_clock`, `entities: dict[entity_id → (name, grid_id, location_id)]`, `extras: dict[entity_id → dict[str, value]]` (empty unless the driver passes extras), `warnings` (torn reads still present after the retry; see [Consistency](#consistency)). `WorldLayout`: grids and `location_id → (grid_id, x, y)`, fetched once. `take_snapshot(client, layout, tick)`; `read_placements(client, layout)` is the one place the bulk read replaces the *G + N* fallback. |
-| `mapping.py` | Pure functions: prim paths, grid origin offsets, `cell_center(grid, x, y)`, `entity_offset(entity_id)` (fan-out within a cell), `entity_position(grid, x, y, entity_id)`, entity display colour, extras value → USD type. No USD or HTTP imports, so it is trivially unit-testable. |
-| `writer.py` | `TimeSampledWriter`: owns a `Usd.Stage`, writes the static scene once, then `write(snapshot)` per tick using sparse sampling with hold keys (positions, presence, names, and extras); `close()` sets the time range and saves. |
-| `chunks.py` | `ChunkedWriter`: rotates to a new `TimeSampledWriter` every `chunk_size` ticks, stitches all chunks with `UsdUtils.StitchClips`, and patches manifest defaults. `flatten(run, out)`. |
+| `mapping.py` | Pure functions: prim paths, grid origin offsets, `cell_center(grid, x, y)`, `entity_offset(entity_id)` (fan-out within a cell), `entity_position(grid, x, y, entity_id)`, entity display colour, extras value → USD type (re-exported from `usd_recorder.values`). No HTTP imports and no stage access, so it is trivially unit-testable. |
+| `writer.py` | `TimeSampledWriter`: owns a `Usd.Stage`, writes the static scene once, then `write(snapshot)` per tick using sparse sampling with hold keys (usd-recorder's `Track`; positions, presence, names, and extras); `close()` sets the time range and saves. |
+| `chunks.py` | `ChunkedWriter`: rotates to a new `TimeSampledWriter` every `chunk_size` ticks (re-reading the grids), stitches all chunks through usd-recorder's `stitch` (`UsdUtils.StitchClips`, publishing the stitched layers atomically), and authors the manifest defaults. `flatten(run, out)` is usd-recorder's `flatten`. |
 | `recorder.py` | `Recorder(client, environment_id, writer)` (or `Recorder.create(client, environment_id, out_dir, …)`, which fetches the layout and opens the writer): `capture(tick, extras=None)` for driven mode (ticks must increase); `run_polling(interval, ticks)` for poll mode (no extras); `close()`. |
 | `cli.py` | `viron-usd record …`, `viron-usd flatten …`; both take `--binary` (see [Output format](#output-format)). |
 
@@ -455,6 +455,8 @@ smaller than text.
   `VIRON_URL` that is not `localhost`, runs `examples/random_walk.py` for 50 ticks plus a scripted
   walk (a frozen entity, a paused entity, a late arrival, a removal, a rename), and asserts
   criteria 1–5 on the output. The recorder's HTTP session fails the test on any non-`GET` request.
+- **Manual (documented in M8):** open the demo run in usdview and Blender and check that
+  playback looks right.
 
 #### Integration finding: creation dates
 
@@ -466,8 +468,6 @@ and PostgreSQL rejects a `character varying` value there. The test instance adds
 `?stringtype=unspecified` to its JDBC URL, which lets PostgreSQL parse the string as a timestamp.
 This affects only the driver's writes, not the recorder's reads, and no change to Viron is made
 from this project.
-- **Manual (documented in M8):** open the demo run in usdview and Blender and check that
-  playback looks right.
 
 ---
 
