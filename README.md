@@ -175,6 +175,10 @@ pytest -m integration
 tests/integration/start_viron.sh down
 ```
 
+CI also runs [`usd-asset-gate`](https://github.com/Preponderous-Software/usd-asset-gate) on runs
+recorded from that Viron, with the rules in `.usd-asset-gate.yml` (see
+[ARCHITECTURE.md § Testing strategy](ARCHITECTURE.md#testing-strategy)).
+
 ---
 
 ## 🔗 Related

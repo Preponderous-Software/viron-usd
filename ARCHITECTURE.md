@@ -437,6 +437,7 @@ smaller than text.
 | [`requests`](https://pypi.org/project/requests/) | `>=2.32` | HTTP; same floor as Viron's own Python client ([`requirements.txt`](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/requirements.txt)). |
 | [`pytest`](https://pypi.org/project/pytest/) (dev) | `>=8` | Tests. |
 | [`PyJWT`](https://pypi.org/project/PyJWT/) (dev) | `>=2.10` | Minting HS256 test tokens for the integration suite. |
+| [`usd-asset-gate`](https://github.com/Preponderous-Software/usd-asset-gate) (CI only) | pinned commit `e8b2853` (`USD_ASSET_GATE_SHA` in `.github/workflows/usd-asset-gate.yml`) | Validates recorded runs in CI (see [Testing strategy](#testing-strategy)). No release tag yet, so a full commit SHA is pinned; not a package dependency. |
 | Viron (integration/demo only) | pinned commit `c0a6fc5` (`VIRON_COMMIT` in `tests/integration/start_viron.sh`) | Built from a checkout at that commit and run with [`tests/integration/compose.yml`](tests/integration/compose.yml), which mirrors Viron's own [`compose.yml`](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/compose.yml) (PostgreSQL 12 + the Spring Boot service on port 9999) with a test secret, debug endpoints and usage reporting off, and `stringtype=unspecified` on the JDBC URL (see [Integration finding](#integration-finding-creation-dates)). |
 
 ---
@@ -455,6 +456,13 @@ smaller than text.
   `VIRON_URL` that is not `localhost`, runs `examples/random_walk.py` for 50 ticks plus a scripted
   walk (a frozen entity, a paused entity, a late arrival, a removal, a rename), and asserts
   criteria 1–5 on the output. The recorder's HTTP session fails the test on any non-`GET` request.
+- **USD asset gate (separate CI workflow, `.github/workflows/usd-asset-gate.yml`):** starts the
+  same throwaway Viron, records two runs with `examples/random_walk.py` (30 ticks in 10-tick
+  value-clip chunks, and 10 ticks as a single binary layer), flattens the chunked one, and runs
+  `usd-asset-gate check` on all of them. Its rules live in `.usd-asset-gate.yml`: OpenUSD's
+  validators plus `metersPerUnit = 1`, `upAxis = Z`, and a 10 MB file-size cap, failing on
+  warnings; `run.manifest.usda` is exempt from the default-prim and stage-metadata checks because
+  it is only composed through `run.usda`'s clip metadata.
 - **Manual (documented in M8):** open the demo run in usdview and Blender and check that
   playback looks right.
 
