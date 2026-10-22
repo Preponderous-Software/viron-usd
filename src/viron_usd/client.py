@@ -84,6 +84,16 @@ class EntityDto:
     name: str
 
 
+@dataclass(frozen=True)
+class PlacementDto:
+    entity_id: int
+    environment_id: int
+    grid_id: int
+    location_id: int
+    x: int
+    y: int
+
+
 def _retry_after_seconds(headers: Mapping[str, str], default: float) -> float:
     value = None
     for key, val in headers.items():
@@ -123,6 +133,7 @@ class VironClient:
         self.max_retries = max_retries
         self._sleep = sleep
         self.request_count = 0
+        self._bulk_placements: bool | None = None
 
     # -- transport -----------------------------------------------------------------------
 
@@ -178,13 +189,38 @@ class VironClient:
         e = self._get(f"/api/v1/entities/{int(entity_id)}")
         return EntityDto(int(e["entityId"]), str(e.get("name") or ""))
 
-    def supports_bulk_placements(self) -> bool:
+    def get_entities_in_environment(self, environment_id: int) -> list[EntityDto]:
+        data = self._get(f"/api/v1/entities/environment/{int(environment_id)}")
+        return [EntityDto(int(e["entityId"]), str(e.get("name") or "")) for e in data]
+
+    def get_bulk_placements(self, environment_id: int) -> list[PlacementDto]:
+        """Every placed entity in one environment, from one query (the bulk placement read
+        Viron added after the pinned commit, Preponderous-Software/viron#235)."""
+        data = self._get(f"/api/v1/locations/placements?environmentId={int(environment_id)}")
+        return [
+            PlacementDto(
+                int(p["entityId"]),
+                int(p["environmentId"]),
+                int(p["gridId"]),
+                int(p["locationId"]),
+                int(p["x"]),
+                int(p["y"]),
+            )
+            for p in data
+        ]
+
+    def supports_bulk_placements(self, environment_id: int) -> bool:
         """Whether this Viron instance offers the bulk placement read.
 
-        The read-only bulk endpoint requested in Preponderous-Software/viron#234 has no defined
-        path or response shape yet, so no Viron instance can be detected as providing it and the
-        per-grid + per-entity fallback is always used. Once the endpoint exists, this probe and a
-        ``get_bulk_placements`` method are the only client changes needed; ``take_snapshot``
-        already dispatches on this method.
+        Probed once with one ``get_bulk_placements(environment_id)`` call and remembered for
+        the life of the client: any error answer (a Viron from before the endpoint, such as the
+        pinned ``c0a6fc5``) means the per-grid + per-entity fallback is used instead.
         """
-        return False
+        if self._bulk_placements is None:
+            try:
+                self.get_bulk_placements(environment_id)
+            except (VironError, KeyError, TypeError, ValueError):
+                self._bulk_placements = False
+            else:
+                self._bulk_placements = True
+        return self._bulk_placements
