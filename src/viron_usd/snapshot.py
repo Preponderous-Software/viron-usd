@@ -167,16 +167,42 @@ def _fallback_placements(
     return placements, torn
 
 
+def _bulk_placements(
+    client: VironClient, layout: WorldLayout
+) -> tuple[dict[int, Placement], list[str]]:
+    """2 reads: every placement from one ``/locations/placements`` query, then the names from
+    ``/entities/environment/{id}``. A placed entity missing from the name list (created after
+    the name read began) is looked up with ``/entities/{id}``.
+    """
+    rows = client.get_bulk_placements(layout.environment_id)
+    names = {e.entity_id: e.name for e in client.get_entities_in_environment(layout.environment_id)}
+    placements: dict[int, Placement] = {}
+    torn: list[str] = []
+    for row in rows:
+        info = layout.locations.get(row.location_id)
+        if info is None:
+            continue  # a grid added since the layout was read: the fallback does not see it either
+        name = names.get(row.entity_id)
+        if name is None:
+            try:
+                name = client.get_entity(row.entity_id).name
+            except VironNotFound:
+                torn.append(f"entity {row.entity_id} is placed but no longer exists")
+                continue
+        placements[row.entity_id] = Placement(name, info.grid_id, row.location_id)
+    return placements, torn
+
+
 def read_placements(
     client: VironClient, layout: WorldLayout
 ) -> tuple[dict[int, Placement], list[str]]:
     """Every placed entity in ``layout``'s environment, with its name, grid, and location.
 
-    This is the single place the bulk placement read (Preponderous-Software/viron#234) will plug
-    in when a Viron instance provides it; until then the G + N fallback is the only path.
+    Uses the bulk placement read when the Viron instance provides it (2 requests per tick),
+    and the G + N fallback otherwise; both give the same placements for the same world.
     """
-    if client.supports_bulk_placements():  # pragma: no cover - no Viron provides it yet
-        raise NotImplementedError("bulk placement read is not defined yet (viron#234)")
+    if client.supports_bulk_placements(layout.environment_id):
+        return _bulk_placements(client, layout)
     return _fallback_placements(client, layout)
 
 

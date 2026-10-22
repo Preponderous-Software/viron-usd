@@ -1,7 +1,9 @@
 import logging
+import random
 
 import pytest
 
+from fake_viron import FakeViron
 from viron_usd.snapshot import (
     GridInfo,
     LocationInfo,
@@ -81,10 +83,111 @@ def test_fallback_costs_g_plus_n_requests(viron):
         viron.place(viron.create_entity(str(i)), g1 if i % 2 else g2, 0, i % 4)
     client = viron.client()
     layout = WorldLayout.fetch(client, env)
+    assert client.supports_bulk_placements(env) is False  # the one-off probe
     before = client.request_count
     take_snapshot(client, layout, 0)
     assert client.request_count - before == 2 + 5
     assert all(m == "GET" for m, _ in viron.requests)
+
+
+def test_bulk_read_costs_two_requests(viron_bulk):
+    env, (g1, g2) = world(viron_bulk, grids=2)
+    for i in range(5):
+        viron_bulk.place(viron_bulk.create_entity(str(i)), g1 if i % 2 else g2, 0, i % 4)
+    client = viron_bulk.client()
+    layout = WorldLayout.fetch(client, env)
+    assert client.supports_bulk_placements(env) is True
+    before = len(viron_bulk.requests)
+    snap = take_snapshot(client, layout, 0)
+    assert viron_bulk.get_paths()[before:] == [
+        f"/api/v1/locations/placements?environmentId={env}",
+        f"/api/v1/entities/environment/{env}",
+    ]
+    assert len(snap.entities) == 5 and snap.warnings == ()
+    assert all(m == "GET" for m, _ in viron_bulk.requests)
+
+
+def _walk(fake, ticks=25, seed=3):
+    """Drive a seeded random walk on ``fake`` and yield after each tick's writes."""
+    rng = random.Random(seed)
+    env, grids = world(fake, grids=2)
+    _, (og,) = world(fake)
+    ents = [fake.create_entity(f"e{i}") for i in range(6)]
+    for tick in range(ticks):
+        for e in list(ents):
+            r = rng.random()
+            if r < 0.1:
+                fake.remove(e)
+            elif r < 0.15:
+                fake.place(e, og, 0, 0)  # placed in another environment
+            elif r < 0.85:
+                fake.place(e, rng.choice(grids), rng.randrange(3), rng.randrange(4))
+            if rng.random() < 0.1:
+                fake.rename(e, f"e{e}-t{tick}")
+        if tick == ticks // 2:
+            fake.delete_entity(ents.pop(0))
+            ents.append(fake.create_entity("late"))
+        yield env, tick
+
+
+def test_bulk_and_fallback_paths_read_the_same_snapshots():
+    fallback, bulk = FakeViron(), FakeViron(bulk_placements=True)
+    got = {}
+    for fake in (fallback, bulk):
+        client = fake.client()
+        layout = None
+        for env, tick in _walk(fake):
+            layout = layout or WorldLayout.fetch(client, env)
+            got.setdefault(tick, []).append(take_snapshot(client, layout, tick, clock=lambda: 0.0))
+    assert any(s[0].entities for s in got.values())
+    for tick, (a, b) in got.items():
+        assert dict(a.entities) == dict(b.entities), tick
+        assert a.warnings == b.warnings == ()
+    assert any("/locations/placements" in p for p in bulk.get_paths()[1:])
+    assert not any("/locations/entity/" in p for p in bulk.get_paths())
+
+
+def test_bulk_read_looks_up_a_placed_entity_missing_from_the_name_list(viron_bulk):
+    env, (g,) = world(viron_bulk)
+    e = viron_bulk.create_entity("a")
+    viron_bulk.place(e, g, 1, 1)
+    client = viron_bulk.client()
+    layout = WorldLayout.fetch(client, env)
+    # Removed between the placement read and the name read: placed as of the placement query.
+    state = _tear_once(viron_bulk, f"/entities/environment/{env}", lambda: viron_bulk.remove(e))
+    snap = take_snapshot(client, layout, 0)
+    assert state["done"]
+    assert snap.entities == {e: Placement("a", g, viron_bulk.location_id(g, 1, 1))}
+    assert snap.warnings == ()
+    assert f"/api/v1/entities/{e}" in viron_bulk.get_paths()
+
+
+def test_bulk_read_of_an_entity_deleted_mid_read_is_retried(viron_bulk, caplog):
+    env, (g,) = world(viron_bulk)
+    e = viron_bulk.create_entity("a")
+    viron_bulk.place(e, g, 1, 1)
+    client = viron_bulk.client()
+    layout = WorldLayout.fetch(client, env)
+    state = _tear_once(viron_bulk, f"/entities/environment/{env}", lambda: viron_bulk.delete_entity(e))
+    with caplog.at_level(logging.INFO):
+        snap = take_snapshot(client, layout, 0)
+    assert state["done"]
+    assert snap.entities == {} and snap.warnings == ()
+    assert "no longer exists" in caplog.text and "retrying once" in caplog.text
+
+
+@pytest.mark.parametrize("bulk", [False, True])
+def test_entity_on_a_grid_added_after_the_layout_is_not_read(bulk):
+    fake = FakeViron(bulk_placements=bulk)
+    env, (g,) = world(fake)
+    client = fake.client()
+    layout = WorldLayout.fetch(client, env)
+    g2 = fake.add_grid(env, 1, 1)
+    a, b = fake.create_entity("a"), fake.create_entity("b")
+    fake.place(a, g, 0, 0)
+    fake.place(b, g2, 0, 0)
+    snap = take_snapshot(client, layout, 0)
+    assert set(snap.entities) == {a} and snap.warnings == ()
 
 
 def test_extras_are_carried(viron):

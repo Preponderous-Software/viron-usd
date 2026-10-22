@@ -4,6 +4,7 @@ import pytest
 
 from fake_viron import FakeResponse, FakeViron, ReadOnlyViolation
 from viron_usd.client import (
+    PlacementDto,
     RequestsTransport,
     VironClient,
     VironError,
@@ -29,7 +30,55 @@ def test_reads_each_endpoint_with_dto_shapes(viron):
     loc = client.get_location_of_entity(e)
     assert loc.location_id == viron.location_id(grid, 1, 2) and (loc.x, loc.y) == (1, 2)
     assert client.get_entity(e).name == "wolf"
-    assert client.supports_bulk_placements() is False
+    assert [(x.entity_id, x.name) for x in client.get_entities_in_environment(env)] == [(e, "wolf")]
+    assert client.supports_bulk_placements(env) is False
+
+
+def test_bulk_placement_read_has_the_placement_dto_shape(viron_bulk):
+    env = viron_bulk.create_environment("world", 2, 2, 3)
+    other = viron_bulk.create_environment("other", 1, 1, 1)
+    g1, g2 = viron_bulk.grids_of(env)
+    a, b, c, d = (viron_bulk.create_entity(n) for n in "abcd")
+    viron_bulk.place(b, g2, 1, 2)
+    viron_bulk.place(a, g1, 0, 1)
+    viron_bulk.place(c, viron_bulk.grids_of(other)[0], 0, 0)  # d stays unplaced
+    client = viron_bulk.client()
+    rows = client.get_bulk_placements(env)
+    assert rows == [
+        PlacementDto(a, env, g1, viron_bulk.location_id(g1, 0, 1), 0, 1),
+        PlacementDto(b, env, g2, viron_bulk.location_id(g2, 1, 2), 1, 2),
+    ]
+    assert viron_bulk.get_paths()[-1] == f"/api/v1/locations/placements?environmentId={env}"
+    assert client.get_bulk_placements(999) == []
+
+
+def test_bulk_support_is_probed_once_and_remembered(viron_bulk):
+    env = viron_bulk.create_environment("w", 1, 1, 1)
+    client = viron_bulk.client()
+    assert client.supports_bulk_placements(env) is True
+    assert client.supports_bulk_placements(env) is True
+    assert client.request_count == 1
+
+
+def test_viron_without_the_bulk_read_is_probed_once_and_falls_back(viron):
+    env = viron.create_environment("w", 1, 1, 1)
+    client = viron.client()
+    assert client.supports_bulk_placements(env) is False
+    assert client.supports_bulk_placements(env) is False
+    assert viron.get_paths() == [f"/api/v1/locations/placements?environmentId={env}"]
+
+
+@pytest.mark.parametrize(
+    "response",
+    [FakeResponse(400, {}), FakeResponse(405, {}), FakeResponse(500, {}), FakeResponse(200, {"x": 1})],
+)
+def test_any_unusable_probe_answer_means_no_bulk_read(response):
+    class T:
+        def get(self, url, headers, timeout):
+            return response
+
+    client = VironClient("http://viron.test", token="t", transport=T(), sleep=lambda s: None)
+    assert client.supports_bulk_placements(1) is False
 
 
 def test_bearer_token_from_argument(viron):
@@ -149,8 +198,9 @@ def test_fake_viron_rejects_every_non_get_method():
             fake.request(method, "http://viron.test/api/v1/entities")
 
 
-def test_client_only_ever_issues_get(viron):
+def test_client_only_ever_issues_get(viron_bulk):
     """MVP acceptance criterion 1: every public client call reaches the transport as a GET."""
+    viron = viron_bulk
     env = viron.create_environment("w", 1, 2, 2)
     grid = viron.grids_of(env)[0]
     e = viron.create_entity("a")
@@ -164,7 +214,7 @@ def test_client_only_ever_issues_get(viron):
         params = [p for p in inspect.signature(method).parameters]
         method(*[args[p] for p in params])
         called += 1
-    assert called >= 7
+    assert called >= 9
     assert viron.requests and {m for m, _ in viron.requests} == {"GET"}
 
 

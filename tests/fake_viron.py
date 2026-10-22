@@ -1,7 +1,8 @@
 """An in-memory fake Viron for unit tests.
 
 It answers the ``GET`` endpoints the recorder uses with the same JSON shapes as Viron's DTOs
-(``EnvironmentDto``, ``GridDto``, ``LocationDto``, ``EntityDto``) and **raises on any other
+(``EnvironmentDto``, ``GridDto``, ``LocationDto``, ``EntityDto``, and ``PlacementDTO`` when built
+with ``bulk_placements=True``) and **raises on any other
 HTTP method** — MVP acceptance criterion 1. Tests mutate the world directly through the helper
 methods (``place``, ``move``, ``rename`` …), standing in for a simulation that drives Viron.
 """
@@ -30,8 +31,10 @@ class FakeResponse:
 class FakeViron:
     """A tiny Viron world plus a transport that serves it."""
 
-    def __init__(self, token: str | None = None):
+    def __init__(self, token: str | None = None, *, bulk_placements: bool = False):
         self.token = token
+        # Serve GET /api/v1/locations/placements (added to Viron after the pinned commit).
+        self.bulk_placements = bulk_placements
         self.environments: dict[int, str] = {}
         self.grids: dict[int, dict] = {}  # grid id -> {env, rows, columns, name}
         self.locations: dict[int, tuple[int, int, int]] = {}  # loc id -> (grid, x, y)
@@ -167,6 +170,25 @@ class FakeViron:
         if m := re.fullmatch(r"/api/v1/locations/entity/(\d+)", path):
             e = int(m[1])
             return FakeResponse(200, loc_dto(self.placement[e])) if e in self.placement else nf("loc")
+        if m := re.fullmatch(r"/api/v1/entities/environment/(\d+)", path):
+            grids = set(self.grids_of(int(m[1])))
+            ids = sorted(e for e, loc in self.placement.items() if self.locations[loc][0] in grids)
+            return FakeResponse(200, [entity_dto(e) for e in ids])
+        if self.bulk_placements and (
+            m := re.fullmatch(r"/api/v1/locations/placements(?:\?environmentId=(-?\d+))?", path)
+        ):
+            if m[1] is not None and int(m[1]) < 1:
+                return FakeResponse(400, {"status": 400, "message": "environmentId must be >= 1"})
+            rows = []
+            for e in sorted(self.placement):
+                loc = self.placement[e]
+                grid, x, y = self.locations[loc]
+                env = self.grids[grid]["env"]
+                if m[1] is None or env == int(m[1]):
+                    rows.append(
+                        {"entityId": e, "environmentId": env, "gridId": grid, "locationId": loc, "x": x, "y": y}
+                    )
+            return FakeResponse(200, rows)
         if m := re.fullmatch(r"/api/v1/entities/(\d+)", path):
             e = int(m[1])
             return FakeResponse(200, entity_dto(e)) if e in self.entities else nf("entity")

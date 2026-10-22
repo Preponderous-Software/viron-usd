@@ -51,7 +51,8 @@ Facts the design depends on:
    bulk endpoint was requested upstream in [Preponderous-Software/viron#234](https://github.com/Preponderous-Software/viron/issues/234) and added after the pinned commit,
    as `GET /api/v1/locations/placements` ([Preponderous-Software/viron#235](https://github.com/Preponderous-Software/viron/pull/235),
    [`LocationController.java` at `c96362b`](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/src/main/java/preponderous/viron/controllers/LocationController.java));
-   the recorder does not use it yet (see [Decisions](#decisions)).
+   the recorder uses it when the Viron instance provides it, and the *G + N* fallback otherwise
+   (see [Snapshot cost](#snapshot-cost) and [Decisions](#decisions)).
 8. **Auth.** Every endpoint except `/actuator/health` and the API docs needs
    `Authorization: Bearer <JWT>`. Tokens are HMAC-signed (HS256/384/512) with the UTF-8 bytes of
    Viron's `JWT_SECRET` and must carry an `iss` matching `JWT_ISSUER`
@@ -72,7 +73,8 @@ Facts the design depends on:
 | `/api/v1/entities/grid/{gridId}` | `EntityDto[]` | Which entities are present, and their names | Every tick |
 | `/api/v1/locations/entity/{entityId}` | `LocationDto` | Where each present entity stands | Every tick, per present entity (fallback) |
 | `/api/v1/entities/{id}` | `EntityDto` | Name of a placed entity missing from the name list | Bulk path only, when needed (see [Consistency](#consistency)) |
-| `/api/v1/locations/placements?environmentId={id}` (bulk placement read; added after `c0a6fc5`, see fact 7) | `PlacementDTO[]`: `entityId`, `environmentId`, `gridId`, `locationId`, `x`, `y` per placed entity ([`PlacementDto.java` at `c96362b`](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/src/main/java/preponderous/viron/dto/PlacementDto.java)) | Replaces the two per-tick rows above | Every tick, **once the recorder adopts it** (not used yet) |
+| `/api/v1/locations/placements?environmentId={id}` (bulk placement read; added after `c0a6fc5`, see fact 7) | `PlacementDTO[]`: `entityId`, `environmentId`, `gridId`, `locationId`, `x`, `y` per placed entity ([`PlacementDto.java` at `c96362b`](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/src/main/java/preponderous/viron/dto/PlacementDto.java)) | Replaces the per-grid and per-entity rows above | Once per client as a probe, then every tick when the Viron instance provides it |
+| `/api/v1/entities/environment/{environmentId}` | `EntityDto[]` | Names of the entities in the bulk read (`PlacementDTO` carries none) | Every tick, bulk path only |
 
 Endpoint list: [`docs/MVP.md`](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/docs/MVP.md);
 the per-grid entity query: [`EntityController.java` L52-56](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/src/main/java/preponderous/viron/controllers/EntityController.java#L52-L56).
@@ -95,8 +97,9 @@ Two options were evaluated.
 - **Viron already treats Python as a client language** (fact 9).
 - **Cost:** without a bulk endpoint, one HTTP round trip per present entity per tick (see
   [Snapshot cost](#snapshot-cost)), and snapshots can be torn in poll mode (see
-  [Consistency](#consistency)). Both go away once the recorder uses the bulk read requested in
-  [Preponderous-Software/viron#234](https://github.com/Preponderous-Software/viron/issues/234), which Viron added after the pinned commit.
+  [Consistency](#consistency)). Both go away against a Viron that provides the bulk read requested in
+  [Preponderous-Software/viron#234](https://github.com/Preponderous-Software/viron/issues/234), which Viron added after the pinned commit
+  and the recorder uses whenever it is available.
 
 ### Option B — Java exporter (rejected for the MVP)
 
@@ -122,8 +125,8 @@ Two options were evaluated.
 
 | Module | Responsibility |
 |---|---|
-| `client.py` | `VironClient`: thin `requests` wrapper over the `GET` endpoints above, plus the bulk placement read when the Viron instance provides it (probed through `supports_bulk_placements()`, which always answers `False` for now: the endpoint is not in Viron at the pinned commit and the client does not call it yet; see [Snapshot cost](#snapshot-cost)). Its transport interface has a `get` method only — no HTTP method parameter; bearer token from `--token` or `VIRON_TOKEN`; timeouts and retry on `503` + `Retry-After` (Viron answers lock-wait overruns that way — [README § Database pool and lock wait](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/README.md#database-pool-and-lock-wait)). Its transport is injectable so tests can substitute a fake Viron. |
-| `snapshot.py` | `Snapshot` (frozen dataclass): `tick`, `wall_clock`, `entities: dict[entity_id → (name, grid_id, location_id)]`, `extras: dict[entity_id → dict[str, value]]` (empty unless the driver passes extras), `warnings` (torn reads still present after the retry; see [Consistency](#consistency)). `WorldLayout`: grids and `location_id → (grid_id, x, y)`, fetched once. `take_snapshot(client, layout, tick)`; `read_placements(client, layout)` is the one place the bulk read replaces the *G + N* fallback. |
+| `client.py` | `VironClient`: thin `requests` wrapper over the `GET` endpoints above, plus the bulk placement read (`get_bulk_placements`) when the Viron instance provides it (probed once through `supports_bulk_placements(environment_id)`, which makes one bulk read and remembers the answer; any error answer, as from Viron at the pinned commit, selects the fallback; see [Snapshot cost](#snapshot-cost)). Its transport interface has a `get` method only — no HTTP method parameter; bearer token from `--token` or `VIRON_TOKEN`; timeouts and retry on `503` + `Retry-After` (Viron answers lock-wait overruns that way — [README § Database pool and lock wait](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/README.md#database-pool-and-lock-wait)). Its transport is injectable so tests can substitute a fake Viron. |
+| `snapshot.py` | `Snapshot` (frozen dataclass): `tick`, `wall_clock`, `entities: dict[entity_id → (name, grid_id, location_id)]`, `extras: dict[entity_id → dict[str, value]]` (empty unless the driver passes extras), `warnings` (torn reads still present after the retry; see [Consistency](#consistency)). `WorldLayout`: grids and `location_id → (grid_id, x, y)`, fetched once. `take_snapshot(client, layout, tick)`; `read_placements(client, layout)` is the one place that chooses between the bulk read and the *G + N* fallback. |
 | `mapping.py` | Pure functions: prim paths, grid origin offsets, `cell_center(grid, x, y)`, `entity_offset(entity_id)` (fan-out within a cell), `entity_position(grid, x, y, entity_id)`, entity display colour, extras value → USD type (re-exported from `usd_recorder.values`). No HTTP imports and no stage access, so it is trivially unit-testable. |
 | `writer.py` | `TimeSampledWriter`: owns a `Usd.Stage`, writes the static scene once, then `write(snapshot)` per tick using sparse sampling with hold keys (usd-recorder's `Track`; positions, presence, names, and extras); `close()` sets the time range and saves. |
 | `chunks.py` | `ChunkedWriter`: rotates to a new `TimeSampledWriter` every `chunk_size` ticks (re-reading the grids), stitches all chunks through usd-recorder's `stitch` (`UsdUtils.StitchClips`, publishing the stitched layers atomically), and authors the manifest defaults. `flatten(run, out)` is usd-recorder's `flatten`. |
@@ -148,7 +151,7 @@ sequenceDiagram
         D->>V: PUT move / place / DELETE (driver's own writes)
         D->>R: capture(tick, extras)
         alt Viron provides the bulk placement read
-            R->>V: GET bulk placements (one call)
+            R->>V: GET /locations/placements, /entities/environment/{id}
         else fallback
             R->>V: GET /entities/grid/{g} (per grid)
             R->>V: GET /locations/entity/{e} (per present entity)
@@ -279,8 +282,9 @@ start of the range; across chunks the manifest default does it (see
 Per tick, for an environment with *G* grids and *N* placed entities:
 
 - **With the bulk placement read** (`/api/v1/locations/placements`, added to Viron after the
-  pinned commit; see fact 7): **1** `GET`, scoped to the environment. Not used yet:
-  `supports_bulk_placements()` answers `False`, so every tick takes the fallback below.
+  pinned commit; see fact 7): **1** `GET` for every placement, scoped to the environment (plus the
+  name read below). Used whenever `supports_bulk_placements()` finds the endpoint; the Viron the
+  integration suite and the demo start is still pinned before it, so they take the fallback below.
 - **Fallback (Viron at `c0a6fc5`):** **G + N** `GET` requests (one `/entities/grid/{g}` per grid,
   one `/locations/entity/{e}` per entity). The alternative, asking each location for its
   entities, costs *rows × columns × G* requests and is only cheaper when the grids are nearly
@@ -449,7 +453,9 @@ smaller than text.
 
 - **Unit (fast, no network):** `mapping.py` as pure functions; `snapshot.py` and `recorder.py`
   against a **fake Viron transport** — an in-memory world with the same JSON shapes as the DTOs
-  above, which raises on any non-`GET` request (acceptance criterion 1). Writer and chunk tests
+  above, which raises on any non-`GET` request (acceptance criterion 1). It serves the bulk
+  placement read only when built with `bulk_placements=True`, so both read paths are tested, and
+  the recorder tests require them to write byte-identical stages. Writer and chunk tests
   feed synthetic `Snapshot`s and assert on the stage through the `pxr` API: resolved
   translation and `ComputeVisibility` at each integer time code, sample counts per attribute, and
   equality between chunked, unchunked, and flattened stages.
@@ -489,9 +495,9 @@ Recorded 2026-10-17. Each resolves a former open question.
 1. **Bulk placement read in Viron — requested upstream, since added.** A read-only endpoint returning every
    placed entity's location (entity id, grid, environment, `x`, `y`) in one call, optionally
    scoped to an environment, was filed as [Preponderous-Software/viron#234](https://github.com/Preponderous-Software/viron/issues/234), and Viron added it after the
-   pinned commit as `GET /api/v1/locations/placements` (see fact 7). Until the Viron pin moves past
-   it and the client calls it, the recorder uses *G + N* requests
-   (see [Snapshot cost](#snapshot-cost) and [Consistency](#consistency)).
+   pinned commit as `GET /api/v1/locations/placements` (see fact 7). The recorder uses it (2 requests
+   per tick) against a Viron that provides it and *G + N* requests otherwise, including against the
+   pinned commit (see [Snapshot cost](#snapshot-cost) and [Consistency](#consistency)).
 2. **Visual state beyond position — optional driver extras.** `capture(tick, extras={entity_id: {...}})`
    writes custom time-sampled attributes (e.g. colour, category); recordings made from Viron
    alone work without it (see [Optional per-entity extras](#optional-per-entity-extras)).

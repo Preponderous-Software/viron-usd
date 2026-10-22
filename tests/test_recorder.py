@@ -4,6 +4,7 @@ import random
 import pytest
 from pxr import Gf, Usd, UsdGeom
 
+from fake_viron import FakeViron
 from viron_usd import cli, mapping
 from viron_usd.recorder import Recorder, run_layer_path
 
@@ -405,3 +406,35 @@ def test_flatten_command(cli_viron, tmp_path, capsys):
     (tmp_path / "broken.usda").write_text("#usda 1.0\nthis is not usd {\n")
     assert cli.main(["flatten", str(tmp_path / "broken.usda")]) == 1
     assert "Traceback" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("chunk_size", [None, 4])
+def test_bulk_placement_read_records_the_same_stage_as_the_fallback(tmp_path, chunk_size):
+    """The bulk read changes how Viron is read, never what is recorded."""
+    out = {}
+    for bulk in (False, True):
+        fake = FakeViron(bulk_placements=bulk)
+        env = fake.create_environment("w", 2, 3, 3)
+        grids = fake.grids_of(env)
+        rng = random.Random(5)
+        ents = [fake.create_entity(f"e{i}") for i in range(5)]
+        client = fake.client()
+        out[bulk] = tmp_path / ("bulk" if bulk else "fallback")
+        with Recorder.create(client, env, out[bulk], chunk_size=chunk_size, clock=lambda: 0.0) as rec:
+            for tick in range(13):
+                for e in ents:
+                    r = rng.random()
+                    if r < 0.15:
+                        fake.remove(e)
+                    elif r < 0.85:
+                        fake.place(e, rng.choice(grids), rng.randrange(3), rng.randrange(3))
+                    if rng.random() < 0.1:
+                        fake.rename(e, f"e{e}-t{tick}")
+                if tick == 6:
+                    grids.append(fake.add_grid(env, 3, 3))  # only seen at the next chunk boundary
+                rec.capture(tick)
+        assert client.supports_bulk_placements(env) is bulk
+    files = sorted(p.relative_to(out[False]).as_posix() for p in out[False].rglob("*.usd*"))
+    assert files and files == sorted(p.relative_to(out[True]).as_posix() for p in out[True].rglob("*.usd*"))
+    for name in files:
+        assert (out[True] / name).read_bytes() == (out[False] / name).read_bytes(), name
