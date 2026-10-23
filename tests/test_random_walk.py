@@ -116,7 +116,9 @@ def test_main_records_a_run(rw, tmp_path, monkeypatch, capsys):
 @pytest.mark.parametrize(
     "bad",
     [["--ticks", "0"], ["--ticks", "-3"], ["--entities", "0"], ["--grids", "0"], ["--grid-size", "0"],
-     ["--chunk-size", "-1"], ["--entities", "10", "--grid-size", "3"]],
+     ["--chunk-size", "-1"], ["--entities", "10", "--grid-size", "3"],
+     ["--ticks-per-second", "0"], ["--ticks-per-second", "-1"], ["--ticks-per-second", "nan"],
+     ["--ticks-per-second", "inf"]],
 )
 def test_main_rejects_bad_arguments_before_any_request(rw, monkeypatch, bad):
     def no_session():

@@ -14,6 +14,7 @@ Run it only against a Viron you started locally (see docs/PLAYBACK.md):
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import random
 import statistics
@@ -125,6 +126,13 @@ def _non_negative_int(text: str) -> int:
     return value
 
 
+def _positive_float(text: str) -> float:
+    value = float(text)
+    if not math.isfinite(value) or value <= 0:
+        raise argparse.ArgumentTypeError("must be a finite number greater than 0")
+    return value
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Drive a random walk on a local Viron and record it with viron-usd.")
     p.add_argument("--viron-url", default=DEFAULT_URL)
@@ -136,7 +144,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--out", default="runs/random_walk", help="run directory (default runs/random_walk)")
     p.add_argument("--chunk-size", type=_non_negative_int, default=1000, help="ticks per chunk layer; 0 = one layer")
-    p.add_argument("--ticks-per-second", type=float, default=10.0, help="playback rate (default 10)")
+    p.add_argument("--ticks-per-second", type=_positive_float, default=10.0, help="playback rate (default 10)")
     p.add_argument("--binary", action="store_true")
     return p
 
