@@ -70,7 +70,7 @@ Facts the design depends on:
 | `/api/v1/environments/{id}` | `EnvironmentDto` | Root prim metadata | Start of run |
 | `/api/v1/grids/environment/{environmentId}` | `GridDto[]` | Grid planes | Start of run, and start of each chunk |
 | `/api/v1/locations/grid/{gridId}` | `LocationDto[]` | Cell mesh, location id → (grid, x, y) | Start of run (locations are static) |
-| `/api/v1/entities/grid/{gridId}` | `EntityDto[]` | Which entities are present, and their names | Every tick |
+| `/api/v1/entities/grid/{gridId}` | `EntityDto[]` | Which entities are present, and their names | Every tick, per grid (fallback) |
 | `/api/v1/locations/entity/{entityId}` | `LocationDto` | Where each present entity stands | Every tick, per present entity (fallback) |
 | `/api/v1/entities/{id}` | `EntityDto` | Name of a placed entity missing from the name list | Bulk path only, when needed (see [Consistency](#consistency)) |
 | `/api/v1/locations/placements?environmentId={id}` (bulk placement read; added after `c0a6fc5`, see fact 7) | `PlacementDTO[]`: `entityId`, `environmentId`, `gridId`, `locationId`, `x`, `y` per placed entity ([`PlacementDto.java` at `c96362b`](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/src/main/java/preponderous/viron/dto/PlacementDto.java)) | Replaces the per-grid and per-entity rows above | Once per client as a probe, then every tick when the Viron instance provides it |
@@ -288,7 +288,7 @@ Per tick, for an environment with *G* grids and *N* placed entities:
 - **Fallback (Viron at `c0a6fc5`):** **G + N** `GET` requests (one `/entities/grid/{g}` per grid,
   one `/locations/entity/{e}` per entity). The alternative, asking each location for its
   entities, costs *rows × columns × G* requests and is only cheaper when the grids are nearly
-  full; the client may pick whichever is smaller per grid.
+  full; the client does not use it.
 
 Entity names come from `/entities/grid/{g}` in the fallback path; with the bulk read they come
 from one `/entities/environment/{environmentId}` call per tick
@@ -317,11 +317,13 @@ The `GET`s for one tick are separate requests, not one transaction.
 - **Poll mode with the bulk placement read:** every placement comes from one query, so the
   placement map is consistent. Names come from a second call, so a rename or a just-created
   entity's name can lag by one tick; a placed entity missing from the name list is looked up with
-  `GET /api/v1/entities/{id}`.
+  `GET /api/v1/entities/{id}`, and one that `404`s there (deleted between the reads) is treated
+  as a torn read, as below.
 - **Poll mode without it:** the driver keeps writing while the recorder reads, so a snapshot can be torn.
-  `take_snapshot` detects the cases it can (an entity listed in grid *g* whose location is not
-  in *g*; an entity that `404`s between the two calls), retries the tick once, and otherwise
-  records it with a warning in the layer's `customLayerData`.
+  `take_snapshot` detects the cases it can (an entity listed in two grids; an entity listed in
+  grid *g* whose location is not in *g*, or not in the environment; an entity that `404`s between
+  the two calls), retries the tick once, and otherwise records it with a warning in the layer's
+  `customLayerData`.
 
 ---
 
