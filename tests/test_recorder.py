@@ -342,11 +342,42 @@ def test_record_bad_token_reports_401(cli_viron, tmp_path, capsys):
     assert rc == 1 and "401" in capsys.readouterr().err
 
 
+def test_record_without_a_token_warns(cli_viron, tmp_path, monkeypatch, capsys, caplog):
+    env, _, seen = cli_viron
+    monkeypatch.delenv("VIRON_TOKEN", raising=False)
+    with caplog.at_level(logging.WARNING, logger="viron_usd"):
+        rc = cli.main(["record", "--environment", str(env), "--ticks", "1", "--out", str(tmp_path)])
+    assert rc == 1 and seen["token"] is None
+    assert "no token given (--token or $VIRON_TOKEN)" in caplog.text
+    assert "401" in capsys.readouterr().err
+
+
+def test_record_viron_error_mid_run_saves_what_was_recorded(cli_viron, viron, tmp_path, monkeypatch, capsys):
+    env, e, _ = cli_viron
+    calls = {"n": 0}
+
+    def sleep(seconds):
+        calls["n"] += 1
+        if calls["n"] == 2:  # after ticks 0 and 1: the next capture's entity list fails
+            viron.inject(r"^/api/v1/entities/grid/", 500)
+
+    monkeypatch.setattr("time.sleep", sleep)
+    rc = cli.main(["record", "--environment", str(env), "--interval", "5",
+                   "--token", "test-token", "--out", str(tmp_path)])
+    assert rc == 1
+    captured = capsys.readouterr()
+    assert "-> 500; saving what was recorded" in captured.err
+    assert f"recorded 2 tick(s) to {tmp_path / 'run.usda'}" in captured.out
+    stage = open_run(tmp_path / "run.usda")
+    assert (stage.GetStartTimeCode(), stage.GetEndTimeCode()) == (0, 1) and is_visible(stage, env, e, 1)
+
+
 @pytest.mark.parametrize(
     "bad",
     [["--ticks", "0"], ["--interval", "-1"], ["--ticks-per-second", "0"], [],
      ["--interval", "nan"], ["--interval", "inf"], ["--ticks-per-second", "nan"],
-     ["--ticks-per-second", "inf"], ["--ticks-per-second", "1e309"]],
+     ["--ticks-per-second", "inf"], ["--ticks-per-second", "1e309"],
+     ["--chunk-size", "-1"], ["--ticks", "-3"], ["--ticks", "two"], ["--interval", "soon"]],
 )
 def test_record_argument_validation(bad, capsys):
     args = ["record"] + (bad + ["--environment", "1"] if bad else [])
@@ -406,6 +437,25 @@ def test_flatten_command(cli_viron, tmp_path, capsys):
     (tmp_path / "broken.usda").write_text("#usda 1.0\nthis is not usd {\n")
     assert cli.main(["flatten", str(tmp_path / "broken.usda")]) == 1
     assert "Traceback" not in capsys.readouterr().err
+
+
+def test_flatten_command_writes_to_the_output_path(cli_viron, tmp_path, capsys):
+    env, e, _ = cli_viron
+    assert cli.main(["record", "--environment", str(env), "--ticks", "3", "--interval", "0", "--chunk-size", "2",
+                     "--token", "test-token", "--out", str(tmp_path / "run")]) == 0
+    out = tmp_path / "baked.usda"
+    assert cli.main(["flatten", str(tmp_path / "run" / "run.usda"), "-o", str(out)]) == 0
+    assert f"wrote {out}" in capsys.readouterr().out
+    assert not (tmp_path / "run" / "run_flat.usda").exists()
+    stage = open_run(out)
+    assert (stage.GetStartTimeCode(), stage.GetEndTimeCode()) == (0, 2) and is_visible(stage, env, e, 2)
+
+
+@pytest.mark.parametrize("environment", ["abc", "1.5"])
+def test_record_rejects_a_non_integer_environment(environment, capsys):
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["record", "--environment", environment])
+    assert exc.value.code == 2 and "--environment" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("chunk_size", [None, 4])
