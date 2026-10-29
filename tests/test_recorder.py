@@ -318,11 +318,12 @@ def test_interrupting_record_leaves_a_valid_stage(cli_viron, tmp_path, monkeypat
 
     def sleep(seconds):
         calls["n"] += 1
-        if calls["n"] == 3:
+        if calls["n"] == 3:  # after ticks 0, 1 and 2
             raise KeyboardInterrupt
 
+    # a long interval keeps every deadline ahead of the real clock, so sleep runs after each tick
     monkeypatch.setattr("time.sleep", sleep)
-    rc = cli.main(["record", "--environment", str(env), "--interval", "0.01",
+    rc = cli.main(["record", "--environment", str(env), "--interval", "5",
                    "--token", "test-token", "--out", str(tmp_path)])
     assert rc == 130
     stage = open_run(tmp_path / "run.usda")
