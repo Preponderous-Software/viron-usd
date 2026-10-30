@@ -1,7 +1,7 @@
 """TimeSampledWriter on synthetic snapshots — MVP acceptance criteria 2–6."""
 
 import pytest
-from pxr import Gf, Usd, UsdGeom
+from pxr import Gf, Sdf, Usd, UsdGeom
 
 from synthetic import make_layout, snap
 from viron_usd import mapping
@@ -199,3 +199,102 @@ def test_position_is_held_exactly_while_unplaced(tmp_path):
         assert same(translate(stage, 1, t), expected(layout, 1, 0, 0, 1)), t
         assert visible(stage, 1, t) == (t < 2)
     assert translate(stage, 1, 6) == expected(layout, 1, 3, 3, 1) and visible(stage, 1, 6)
+
+
+def test_entity_ids_are_sorted_and_keep_unplaced_entities(tmp_path):
+    layout = make_layout()
+    writer = TimeSampledWriter.create(tmp_path / "r.usda", layout)
+    assert writer.entity_ids() == []
+    writer.write(snap(layout, 0, {5: (1, 0, 0), 2: (1, 1, 1)}))
+    writer.write(snap(layout, 1, {2: (1, 1, 1)}))
+    assert writer.entity_ids() == [2, 5]
+
+
+def test_flush_writes_pending_hold_keys_without_closing(tmp_path):
+    layout = make_layout()
+    writer = TimeSampledWriter.create(tmp_path / "r.usda", layout)
+    for t in range(5):
+        writer.write(snap(layout, t, {1: (1, 0, 0)}))
+    attr = writer.stage.GetPrimAtPath(mapping.entity_path(E, 1)).GetAttribute("xformOp:translate")
+    assert attr.GetTimeSamples() == [0.0]
+    writer.flush()
+    assert attr.GetTimeSamples() == [0.0, 4.0]
+    assert not writer.closed
+    writer.write(snap(layout, 5, {1: (1, 1, 0)}))
+    assert attr.GetTimeSamples() == [0.0, 4.0, 5.0]
+
+
+def test_close_without_save_leaves_the_file_unwritten(tmp_path):
+    layout = make_layout()
+    path = tmp_path / "r.usda"
+    writer = TimeSampledWriter.create(path, layout)
+    writer.write(snap(layout, 3, {1: (1, 0, 0)}))
+    writer.close(save=False)
+    assert writer.closed
+    assert (writer.stage.GetStartTimeCode(), writer.stage.GetEndTimeCode()) == (3, 3)
+    entity_name = mapping.entity_path(E, 1).rsplit("/", 1)[1]
+    assert not path.exists() or entity_name not in path.read_text()
+
+
+def test_layer_without_static_scene_has_no_grids(tmp_path):
+    layout = make_layout()
+    path = tmp_path / "chunk.usda"
+    writer = TimeSampledWriter.create(path, layout, static_scene=False)
+    writer.write(snap(layout, 0, {1: (1, 0, 0)}))
+    writer.close()
+    stage = Usd.Stage.Open(str(path))
+    assert stage.GetDefaultPrim().GetPath() == Sdf.Path(mapping.WORLD_PATH)
+    assert stage.GetRootLayer().customLayerData["vironUsd:environmentId"] == E
+    env = stage.GetPrimAtPath(mapping.environment_path(E))
+    assert env.IsA(UsdGeom.Xform) and not env.GetAttribute("viron:environmentId").IsValid()
+    assert not stage.GetPrimAtPath(mapping.grids_path(E)).IsValid()
+    assert stage.GetPrimAtPath(mapping.entities_path(E)).IsA(UsdGeom.Scope)
+    assert translate(stage, 1, 0) == expected(layout, 1, 0, 0, 1)
+
+
+def driver_state(tmp_path, layout):
+    """A layer in which entity 1 has extras and a driver colour, and entity 2 has neither."""
+    writer = TimeSampledWriter.create(tmp_path / "a.usda", layout)
+    placed = {1: (1, 0, 0), 2: (1, 1, 1)}
+    writer.write(snap(layout, 0, placed, extras={1: {"hp": 10, "kind": "wolf", "color": (0.9, 0.2, 0.1)}}))
+    writer.write(snap(layout, 1, placed, extras={1: {"hp": 7}}))
+    state = writer.carry_state()
+    writer.close()
+    return state
+
+
+def test_carry_state_lists_extras_types_and_entities_without_driver_state(tmp_path):
+    state = driver_state(tmp_path, make_layout())
+    assert sorted(state) == [1, 2]
+    assert state[1]["types"] == {"hp": "int", "kind": "string"}
+    assert sorted(state[1]["values"]) == ["hp", "kind"]
+    assert state[1]["color"] is not None
+    assert state[2] == {"types": {}, "values": {}, "color": None}
+
+
+def test_carried_state_is_authored_when_the_entity_is_first_seen(tmp_path):
+    layout = make_layout()
+    state = driver_state(tmp_path, layout)
+    path = tmp_path / "b.usda"
+    writer = TimeSampledWriter.create(path, layout, static_scene=False, carried=state)
+    writer.write(snap(layout, 5, {}))
+    writer.write(snap(layout, 6, {1: (1, 2, 2)}))
+    writer.close()
+    stage = Usd.Stage.Open(str(path))
+    prim = stage.GetPrimAtPath(mapping.entity_path(E, 1))
+    assert prim.GetAttribute("extras:hp").Get(6) == 7
+    assert prim.GetAttribute("extras:kind").Get(6) == "wolf"
+    color = UsdGeom.Cube(stage.GetPrimAtPath(mapping.entity_geom_path(E, 1))).GetDisplayColorAttr()
+    assert Gf.IsClose(color.Get(6)[0], Gf.Vec3f(0.9, 0.2, 0.1), 1e-6)
+    assert not stage.GetPrimAtPath(mapping.entity_path(E, 2)).IsValid()
+
+
+def test_carry_state_passes_on_carried_entities_the_layer_never_saw(tmp_path):
+    layout = make_layout()
+    state = driver_state(tmp_path, layout)
+    writer = TimeSampledWriter.create(tmp_path / "b.usda", layout, static_scene=False, carried=state)
+    writer.write(snap(layout, 5, {2: (1, 1, 1)}))
+    again = writer.carry_state()
+    writer.close()
+    assert again[1] == state[1]
+    assert again[2] == {"types": {}, "values": {}, "color": None}
