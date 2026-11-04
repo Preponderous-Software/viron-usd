@@ -1,23 +1,23 @@
 # Concept — Viron USD
 
 > Status: MVP implemented (see the [README](README.md)). Facts about Viron below are cited against
-> [`Preponderous-Software/viron@c0a6fc5`](https://github.com/Preponderous-Software/viron/tree/c0a6fc54b66ddab63a9c90f4858fced55ea68e82)
-> (the `main` branch head on 2026-10-17).
+> [`Preponderous-Software/viron@c96362b`](https://github.com/Preponderous-Software/viron/tree/c96362b750114878a0571dff71f20a755c68beba)
+> (merged to the `main` branch on 2026-10-18).
 
 ## The problem
 
 [Viron](https://github.com/Preponderous-Software/viron) is a spatial simulation service. It keeps
 **environments → grids → locations**, and **entities** placed at locations, behind a REST API
-([README](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/README.md),
-[docs/MVP.md](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/docs/MVP.md)).
+([README](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/README.md),
+[docs/MVP.md](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/docs/MVP.md)).
 The simulation logic — what moves where, and when — lives in the client that drives Viron.
 
 Viron stores **only the present**. Its schema has one row per entity placement
 (`viron.entity_location`, keyed on `entity_id` alone —
-[create_tables.sql L36-47](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/db-scripts/setup/create_tables.sql#L36-L47)),
+[create_tables.sql L36-47](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/db-scripts/setup/create_tables.sql#L36-L47)),
 so a move overwrites the previous placement. There is no tick counter, no event log, and no
 history endpoint anywhere in the API
-([docs/openapi/viron-api.json](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/docs/openapi/viron-api.json)).
+([docs/openapi/viron-api.json](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/docs/openapi/viron-api.json)).
 
 So once a run is over, there is nothing to look at. Answering "how did these entities end up
 clustered in that corner?" means re-running the simulation and hoping it does the same thing.
@@ -64,7 +64,7 @@ The output plays back in `usdview` and, after flattening, in Blender's timeline.
   without bound.
 - **A small, honest mapping.** The design uses only what Viron's API actually returns. Viron
   entities have an id, a name, and a creation date — nothing else
-  ([EntityDto.java](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/src/main/java/preponderous/viron/dto/EntityDto.java)) —
+  ([EntityDto.java](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/src/main/java/preponderous/viron/dto/EntityDto.java)) —
   so the recorder does not invent health, facing, or other visual state.
 
 ## Non-goals

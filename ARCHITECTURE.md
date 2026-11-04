@@ -1,9 +1,9 @@
 # Architecture — Viron USD
 
 > Status: MVP implemented; this document describes the design as built. Every statement about Viron is cited against
-> [`Preponderous-Software/viron@c0a6fc5`](https://github.com/Preponderous-Software/viron/tree/c0a6fc54b66ddab63a9c90f4858fced55ea68e82)
-> (`main` on 2026-10-17). `V/` below is shorthand for
-> `https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/`.
+> [`Preponderous-Software/viron@c96362b`](https://github.com/Preponderous-Software/viron/tree/c96362b750114878a0571dff71f20a755c68beba)
+> (merged to `main` on 2026-10-18). `V/` below is shorthand for
+> `https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/`.
 > Statements about USD marked **(spiked)** were checked by a throwaway script against
 > `usd-core` 26.8 while writing this document; the script is not part of the repository.
 
@@ -15,53 +15,55 @@
 
 | Viron concept | Fields returned by the API | Source |
 |---|---|---|
-| Environment | `environmentId`, `name`, `creationDate` | [`EnvironmentDto.java`](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/src/main/java/preponderous/viron/dto/EnvironmentDto.java) |
-| Grid | `gridId`, `rows`, `columns`, `name` (optional) | [`GridDto.java`](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/src/main/java/preponderous/viron/dto/GridDto.java) |
-| Location | `locationId`, `x`, `y` — **no grid id** | [`LocationDto.java`](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/src/main/java/preponderous/viron/dto/LocationDto.java) |
-| Entity | `entityId`, `name`, `creationDate` — **nothing else** | [`EntityDto.java`](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/src/main/java/preponderous/viron/dto/EntityDto.java) |
+| Environment | `environmentId`, `name`, `creationDate` | [`EnvironmentDto.java`](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/src/main/java/preponderous/viron/dto/EnvironmentDto.java) |
+| Grid | `gridId`, `rows`, `columns`, `name` (optional) | [`GridDto.java`](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/src/main/java/preponderous/viron/dto/GridDto.java) |
+| Location | `locationId`, `x`, `y` — **no grid id** | [`LocationDto.java`](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/src/main/java/preponderous/viron/dto/LocationDto.java) |
+| Entity | `entityId`, `name`, `creationDate` — **nothing else** | [`EntityDto.java`](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/src/main/java/preponderous/viron/dto/EntityDto.java) |
 
 Facts the design depends on:
 
 1. **Hierarchy lives in join tables.** `grid_environment`, `location_grid`, and `entity_location`
-   link the four tables ([`create_tables.sql`](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/db-scripts/setup/create_tables.sql)).
+   link the four tables ([`create_tables.sql`](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/db-scripts/setup/create_tables.sql)).
    A location's grid is therefore only known from *which query returned it*.
 2. **One placement per entity.** `entity_location` is keyed on `entity_id` alone
-   ([`create_tables.sql` L36-47](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/db-scripts/setup/create_tables.sql#L36-L47)).
+   ([`create_tables.sql` L36-47](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/db-scripts/setup/create_tables.sql#L36-L47)).
    A location may hold several entities.
 3. **Entities belong to an environment only through placement.** "Entities in environment" and
    "entities in grid" are subqueries over `entity_location`
-   ([`EntityRepositoryImpl.java` L40-52](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/src/main/java/preponderous/viron/repositories/EntityRepositoryImpl.java#L40-L52)).
+   ([`EntityRepositoryImpl.java` L40-52](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/src/main/java/preponderous/viron/repositories/EntityRepositoryImpl.java#L40-L52)).
    An unplaced entity is in the global `/entities/unassigned` pool and is not associated with any
    environment. **Presence** in a recording therefore means "placed in one of this
    environment's grids".
 4. **Grid coordinates.** Each grid gets its own locations with `x` in `[0, rows)` and `y` in
-   `[0, columns)` ([`EnvironmentFactory.java` L87-94](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/src/main/java/preponderous/viron/factories/EnvironmentFactory.java#L87-L94)).
+   `[0, columns)` ([`EnvironmentFactory.java` L87-94](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/src/main/java/preponderous/viron/factories/EnvironmentFactory.java#L87-L94)).
    Grids in one environment all have the same dimensions and overlapping `(x, y)` ranges; Viron
    defines no spatial relation between grids.
 5. **Movement is one step, 8-way.** A move must target a location in the same grid with
-   Chebyshev distance 1 ([`LocationController.java` L271-275](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/src/main/java/preponderous/viron/controllers/LocationController.java#L271-L275)).
+   Chebyshev distance 1 ([`LocationController.java` L289-293](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/src/main/java/preponderous/viron/controllers/LocationController.java#L289-L293)).
    Between two recorded ticks, though, a driver may move an entity several times, remove it and
    place it elsewhere, or move it to another grid — the recorder must not assume adjacency.
 6. **No time axis.** There is no tick, version, event, or history concept in the API
-   ([`docs/openapi/viron-api.json`](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/docs/openapi/viron-api.json)).
+   ([`docs/openapi/viron-api.json`](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/docs/openapi/viron-api.json)).
    The recorder supplies the time axis.
-7. **No pagination, no bulk placement read.** List endpoints return everything
-   ([`docs/MVP.md` — pagination listed as optional](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/docs/MVP.md)),
-   and there is no single call that returns every entity→location pair for a grid. A read-only
-   bulk endpoint was requested upstream in [Preponderous-Software/viron#234](https://github.com/Preponderous-Software/viron/issues/234) and added after the pinned commit,
-   as `GET /api/v1/locations/placements` ([Preponderous-Software/viron#235](https://github.com/Preponderous-Software/viron/pull/235),
-   [`LocationController.java` at `c96362b`](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/src/main/java/preponderous/viron/controllers/LocationController.java));
-   the recorder uses it when the Viron instance provides it, and the *G + N* fallback otherwise
+7. **No pagination; one bulk placement read.** List endpoints return everything
+   ([`docs/MVP.md` — pagination listed as optional](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/docs/MVP.md)).
+   Every entity→location pair comes from one read-only call,
+   `GET /api/v1/locations/placements`, answered from a single query and optionally scoped to one
+   environment. It was requested upstream in [Preponderous-Software/viron#234](https://github.com/Preponderous-Software/viron/issues/234) and added by
+   [Preponderous-Software/viron#235](https://github.com/Preponderous-Software/viron/pull/235)
+   ([`LocationController.java` L70-82](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/src/main/java/preponderous/viron/controllers/LocationController.java#L70-L82));
+   the commit pinned before it, `c0a6fc5`, does not have it. The recorder uses it when the Viron
+   instance provides it, and the *G + N* fallback otherwise
    (see [Snapshot cost](#snapshot-cost) and [Decisions](#decisions)).
 8. **Auth.** Every endpoint except `/actuator/health` and the API docs needs
    `Authorization: Bearer <JWT>`. Tokens are HMAC-signed (HS256/384/512) with the UTF-8 bytes of
    Viron's `JWT_SECRET` and must carry an `iss` matching `JWT_ISSUER`
-   ([`SecurityConfig.java` L64-80](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/src/main/java/preponderous/viron/config/SecurityConfig.java#L64-L80),
-   [`sample.env`](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/sample.env)).
+   ([`SecurityConfig.java` L64-80](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/src/main/java/preponderous/viron/config/SecurityConfig.java#L64-L80),
+   [`sample.env`](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/sample.env)).
 9. **A Python client already exists** in Viron at `src/main/python/preponderous/viron/`, built on
-   `requests` ([`locationService.py`](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/src/main/python/preponderous/viron/services/locationService.py)),
+   `requests` ([`locationService.py`](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/src/main/python/preponderous/viron/services/locationService.py)),
    but it is imported as `src.main.python.preponderous.viron…` from a repository checkout and is
-   not packaged ([README § Testing](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/README.md#-testing)).
+   not packaged ([README § Testing](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/README.md#-testing)).
 
 ### Endpoints the recorder uses (all `GET`)
 
@@ -76,8 +78,8 @@ Facts the design depends on:
 | `/api/v1/locations/placements?environmentId={id}` (bulk placement read; added after `c0a6fc5`, see fact 7) | `PlacementDTO[]`: `entityId`, `environmentId`, `gridId`, `locationId`, `x`, `y` per placed entity ([`PlacementDto.java` at `c96362b`](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/src/main/java/preponderous/viron/dto/PlacementDto.java)) | Replaces the per-grid and per-entity rows above | Once per client as a probe, then every tick when the Viron instance provides it |
 | `/api/v1/entities/environment/{environmentId}` | `EntityDto[]` | Names of the entities in the bulk read (`PlacementDTO` carries none) | Every tick, bulk path only |
 
-Endpoint list: [`docs/MVP.md`](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/docs/MVP.md);
-the per-grid entity query: [`EntityController.java` L52-56](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/src/main/java/preponderous/viron/controllers/EntityController.java#L52-L56).
+Endpoint list: [`docs/MVP.md`](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/docs/MVP.md);
+the per-grid entity query: [`EntityController.java` L52-56](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/src/main/java/preponderous/viron/controllers/EntityController.java#L52-L56).
 The recorder never calls `POST`, `PUT`, `PATCH`, or `DELETE`.
 
 ---
@@ -98,7 +100,7 @@ Two options were evaluated.
 - **Cost:** without a bulk endpoint, one HTTP round trip per present entity per tick (see
   [Snapshot cost](#snapshot-cost)), and snapshots can be torn in poll mode (see
   [Consistency](#consistency)). Both go away against a Viron that provides the bulk read requested in
-  [Preponderous-Software/viron#234](https://github.com/Preponderous-Software/viron/issues/234), which Viron added after the pinned commit
+  [Preponderous-Software/viron#234](https://github.com/Preponderous-Software/viron/issues/234), which the pinned commit includes
   and the recorder uses whenever it is available.
 
 ### Option B — Java exporter (rejected for the MVP)
@@ -125,7 +127,7 @@ Two options were evaluated.
 
 | Module | Responsibility |
 |---|---|
-| `client.py` | `VironClient`: thin `requests` wrapper over the `GET` endpoints above, plus the bulk placement read (`get_bulk_placements`) when the Viron instance provides it (probed once through `supports_bulk_placements(environment_id)`, which makes one bulk read and remembers the answer; any error answer, as from Viron at the pinned commit, selects the fallback; see [Snapshot cost](#snapshot-cost)). Its transport interface has a `get` method only — no HTTP method parameter; bearer token from `--token` or `VIRON_TOKEN`; timeouts and retry on `503` + `Retry-After` (Viron answers lock-wait overruns that way — [README § Database pool and lock wait](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/README.md#database-pool-and-lock-wait)). Its transport is injectable so tests can substitute a fake Viron. |
+| `client.py` | `VironClient`: thin `requests` wrapper over the `GET` endpoints above, plus the bulk placement read (`get_bulk_placements`) when the Viron instance provides it (probed once through `supports_bulk_placements(environment_id)`, which makes one bulk read and remembers the answer; any error answer, as from a Viron older than the endpoint, selects the fallback; see [Snapshot cost](#snapshot-cost)). Its transport interface has a `get` method only — no HTTP method parameter; bearer token from `--token` or `VIRON_TOKEN`; timeouts and retry on `503` + `Retry-After` (Viron answers lock-wait overruns that way — [README § Database pool and lock wait](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/README.md#database-pool-and-lock-wait)). Its transport is injectable so tests can substitute a fake Viron. |
 | `snapshot.py` | `Snapshot` (frozen dataclass): `tick`, `wall_clock`, `entities: dict[entity_id → (name, grid_id, location_id)]`, `extras: dict[entity_id → dict[str, value]]` (empty unless the driver passes extras), `warnings` (torn reads still present after the retry; see [Consistency](#consistency)). `WorldLayout`: grids and `location_id → (grid_id, x, y)`, fetched once. `take_snapshot(client, layout, tick)`; `read_placements(client, layout)` is the one place that chooses between the bulk read and the *G + N* fallback. |
 | `mapping.py` | Pure functions: prim paths, grid origin offsets, `cell_center(grid, x, y)`, `entity_offset(entity_id)` (fan-out within a cell), `entity_position(grid, x, y, entity_id)`, entity display colour, extras value → USD type (re-exported from `usd_recorder.values`). No HTTP imports and no stage access, so it is trivially unit-testable. |
 | `writer.py` | `TimeSampledWriter`: owns a `Usd.Stage`, writes the static scene once, then `write(snapshot)` per tick using sparse sampling with hold keys (usd-recorder's `Track`; positions, presence, names, and extras); `close()` sets the time range and saves. |
@@ -281,21 +283,21 @@ start of the range; across chunks the manifest default does it (see
 
 Per tick, for an environment with *G* grids and *N* placed entities:
 
-- **With the bulk placement read** (`/api/v1/locations/placements`, added to Viron after the
-  pinned commit; see fact 7): **1** `GET` for every placement, scoped to the environment (plus the
-  name read below). Used whenever `supports_bulk_placements()` finds the endpoint; the Viron the
-  integration suite and the demo start is still pinned before it, so they take the fallback below.
-- **Fallback (Viron at `c0a6fc5`):** **G + N** `GET` requests (one `/entities/grid/{g}` per grid,
+- **With the bulk placement read** (`/api/v1/locations/placements`; see fact 7): **1** `GET` for
+  every placement, scoped to the environment (plus the name read below). Used whenever
+  `supports_bulk_placements()` finds the endpoint, which includes the Viron the integration suite
+  and the demo start.
+- **Fallback (a Viron older than the endpoint, such as `c0a6fc5`):** **G + N** `GET` requests (one `/entities/grid/{g}` per grid,
   one `/locations/entity/{e}` per entity). The alternative, asking each location for its
   entities, costs *rows × columns × G* requests and is only cheaper when the grids are nearly
   full; the client does not use it.
 
 Entity names come from `/entities/grid/{g}` in the fallback path; with the bulk read they come
 from one `/entities/environment/{environmentId}` call per tick
-([`EntityController.java` L46-50](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/src/main/java/preponderous/viron/controllers/EntityController.java#L46-L50)),
+([`EntityController.java` L46-50](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/src/main/java/preponderous/viron/controllers/EntityController.java#L46-L50)),
 so the bulk path costs 2 requests per tick rather than 1: `PlacementDTO` carries no entity name.
 
-Measured in M7 against a real Viron at the pinned commit (fallback path, driven mode, one
+Measured in M7 against a real Viron at `c0a6fc5` (fallback path, driven mode, one
 capture per tick, timed around `Recorder.capture`):
 
 | Where | Scenario | Mean | p95 | `GET`s per capture |
@@ -443,11 +445,11 @@ smaller than text.
 | Python | `>=3.10` (CI: 3.10, 3.12) | `usd-core` 26.8 supports `>=3.9,<3.15`; 3.9 is past end of life. |
 | [`usd-core`](https://pypi.org/project/usd-core/) | `==26.8` (pinned) | USD authoring, crate format, `UsdUtils.StitchClips`. Pinned because value-clip behaviour is what the tests assert. |
 | [`usd-recorder`](https://github.com/Preponderous-Software/usd-recorder) | `v0.1.0` (git tag) | The shared recording building blocks: sparse sampling with hold keys (`Track`), extras value typing, atomic `StitchClips` with topology/manifest/root hooks, manifest defaults, and `flatten`. viron-usd keeps its own stage layout, chunk naming and rotation. `tests/test_equivalence.py` compares every output file with golden copies written before the move (byte for byte for text, by text export for `.usdc`). Not on PyPI yet, so it is installed from the tag. |
-| [`requests`](https://pypi.org/project/requests/) | `>=2.32` | HTTP; same floor as Viron's own Python client ([`requirements.txt`](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/requirements.txt)). |
+| [`requests`](https://pypi.org/project/requests/) | `>=2.32` | HTTP; same floor as Viron's own Python client ([`requirements.txt`](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/requirements.txt)). |
 | [`pytest`](https://pypi.org/project/pytest/) (dev) | `>=8` | Tests. |
 | [`PyJWT`](https://pypi.org/project/PyJWT/) (dev) | `>=2.10` | Minting HS256 test tokens for the integration suite. |
 | [`usd-asset-gate`](https://github.com/Preponderous-Software/usd-asset-gate) (CI only) | pinned commit `e8b2853` (`USD_ASSET_GATE_SHA` in `.github/workflows/usd-asset-gate.yml`) | Validates recorded runs in CI (see [Testing strategy](#testing-strategy)). No release tag yet, so a full commit SHA is pinned; not a package dependency. |
-| Viron (integration/demo only) | pinned commit `c0a6fc5` (`VIRON_COMMIT` in `tests/integration/start_viron.sh`) | Built from a checkout at that commit and run with [`tests/integration/compose.yml`](tests/integration/compose.yml), which mirrors Viron's own [`compose.yml`](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/compose.yml) (PostgreSQL 12 + the Spring Boot service on port 9999) with a test secret, debug endpoints and usage reporting off, and `stringtype=unspecified` on the JDBC URL (see [Integration finding](#integration-finding-creation-dates)). |
+| Viron (integration/demo only) | pinned commit `c96362b` (`VIRON_COMMIT` in `tests/integration/start_viron.sh`) | Built from a checkout at that commit and run with [`tests/integration/compose.yml`](tests/integration/compose.yml), which mirrors Viron's own [`compose.yml`](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/compose.yml) (PostgreSQL 12 + the Spring Boot service on port 9999) with a test secret, debug endpoints and usage reporting off, and `stringtype=unspecified` on the JDBC URL (see [Integration finding](#integration-finding-creation-dates)). |
 
 ---
 
@@ -481,8 +483,8 @@ smaller than text.
 
 Against the stock schema, `POST /api/v1/environments` on Viron at the pinned commit answered
 `400 Failed to create environment`: the factory binds `new java.util.Date().toString()` as a string
-([`EnvironmentFactory.java` L52-54](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/src/main/java/preponderous/viron/factories/EnvironmentFactory.java#L52-L54))
-into a `TIMESTAMP NOT NULL` column ([`create_tables.sql` L29-34](https://github.com/Preponderous-Software/viron/blob/c0a6fc54b66ddab63a9c90f4858fced55ea68e82/db-scripts/setup/create_tables.sql#L29-L34)),
+([`EnvironmentFactory.java` L52-54](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/src/main/java/preponderous/viron/factories/EnvironmentFactory.java#L52-L54))
+into a `TIMESTAMP NOT NULL` column ([`create_tables.sql` L29-34](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/db-scripts/setup/create_tables.sql#L29-L34)),
 and PostgreSQL rejects a `character varying` value there. The test instance adds
 `?stringtype=unspecified` to its JDBC URL, which lets PostgreSQL parse the string as a timestamp.
 This affects only the driver's writes, not the recorder's reads, and no change to Viron is made
@@ -496,10 +498,10 @@ Recorded 2026-10-17. Each resolves a former open question.
 
 1. **Bulk placement read in Viron — requested upstream, since added.** A read-only endpoint returning every
    placed entity's location (entity id, grid, environment, `x`, `y`) in one call, optionally
-   scoped to an environment, was filed as [Preponderous-Software/viron#234](https://github.com/Preponderous-Software/viron/issues/234), and Viron added it after the
-   pinned commit as `GET /api/v1/locations/placements` (see fact 7). The recorder uses it (2 requests
-   per tick) against a Viron that provides it and *G + N* requests otherwise, including against the
-   pinned commit (see [Snapshot cost](#snapshot-cost) and [Consistency](#consistency)).
+   scoped to an environment, was filed as [Preponderous-Software/viron#234](https://github.com/Preponderous-Software/viron/issues/234), and Viron added it as
+   `GET /api/v1/locations/placements` (see fact 7). The recorder uses it (2 requests per tick)
+   against a Viron that provides it, including the pinned commit, and *G + N* requests otherwise
+   (see [Snapshot cost](#snapshot-cost) and [Consistency](#consistency)).
 2. **Visual state beyond position — optional driver extras.** `capture(tick, extras={entity_id: {...}})`
    writes custom time-sampled attributes (e.g. colour, category); recordings made from Viron
    alone work without it (see [Optional per-entity extras](#optional-per-entity-extras)).

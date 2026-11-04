@@ -195,7 +195,7 @@ class VironClient:
 
     def get_bulk_placements(self, environment_id: int) -> list[PlacementDto]:
         """Every placed entity in one environment, from one query (the bulk placement read
-        Viron added after the pinned commit, Preponderous-Software/viron#235)."""
+        Viron added in Preponderous-Software/viron#235)."""
         data = self._get(f"/api/v1/locations/placements?environmentId={int(environment_id)}")
         return [
             PlacementDto(
@@ -213,8 +213,8 @@ class VironClient:
         """Whether this Viron instance offers the bulk placement read.
 
         Probed once with one ``get_bulk_placements(environment_id)`` call and remembered for
-        the life of the client: any error answer (a Viron from before the endpoint, such as the
-        pinned ``c0a6fc5``) means the per-grid + per-entity fallback is used instead.
+        the life of the client: any error answer (a Viron from before the endpoint, such as
+        ``c0a6fc5``) means the per-grid + per-entity fallback is used instead.
         """
         if self._bulk_placements is None:
             try:

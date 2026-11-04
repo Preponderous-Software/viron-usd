@@ -9,7 +9,7 @@
 # VIRON_PORT (default 9999), VIRON_SRC (default .viron-src in the repository root).
 set -euo pipefail
 
-VIRON_COMMIT=c0a6fc54b66ddab63a9c90f4858fced55ea68e82
+VIRON_COMMIT=c96362b750114878a0571dff71f20a755c68beba
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 export VIRON_SRC="${VIRON_SRC:-$ROOT/.viron-src}"

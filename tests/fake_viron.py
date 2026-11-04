@@ -33,7 +33,7 @@ class FakeViron:
 
     def __init__(self, token: str | None = None, *, bulk_placements: bool = False):
         self.token = token
-        # Serve GET /api/v1/locations/placements (added to Viron after the pinned commit).
+        # Serve GET /api/v1/locations/placements (absent from a Viron older than viron#235).
         self.bulk_placements = bulk_placements
         self.environments: dict[int, str] = {}
         self.grids: dict[int, dict] = {}  # grid id -> {env, rows, columns, name}
