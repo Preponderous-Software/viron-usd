@@ -477,6 +477,8 @@ smaller than text.
   `VIRON_URL` that is not `localhost`, runs `examples/random_walk.py` for 50 ticks plus a scripted
   walk (a frozen entity, a paused entity, a late arrival, a removal, a rename), and asserts
   criteria 1–5 on the output. The recorder's HTTP session fails the test on any non-`GET` request.
+  The pinned Viron provides the bulk placement read, and the suite asserts that it was the path
+  taken, so the *G + N* fallback runs only against the fake Viron.
 - **USD asset gate (separate CI workflow, `.github/workflows/usd-asset-gate.yml`):** starts the
   same throwaway Viron, records two runs with `examples/random_walk.py` (30 ticks in 10-tick
   value-clip chunks, and 10 ticks as a single binary layer), flattens the chunked one, and runs
