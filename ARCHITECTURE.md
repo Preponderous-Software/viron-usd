@@ -308,6 +308,14 @@ capture per tick, timed around `Recorder.capture`):
 | CI (same) | scripted walk, 50 ticks, 7 entities, 2 grids, chunk size 20 | 20.2 ms | 30.2 ms | 2 + *N* |
 
 Cost grows with *G + N* as predicted; a few milliseconds per placed entity on a local machine.
+
+Measured against a real Viron at `c96362b` (bulk path, the same scenarios and timing):
+
+| Where | Scenario | Mean | p95 | `GET`s per capture |
+|---|---|---|---|---|
+| CI (GitHub-hosted `ubuntu-latest`, Docker Compose, 2026-11-04) | `random_walk.py`, 50 ticks, 8 entities, 1 grid | 4.8 ms | 6.1 ms | 2.1 (= 2, plus the one-off layout reads and probe) |
+| CI (same) | scripted walk, 50 ticks, 7 entities, 2 grids, chunk size 20 | 7.8 ms | 9.3 ms | 2, plus one grid re-read per chunk |
+
 The CI job prints these figures on every run (`pytest -m integration -s`).
 
 ## Consistency
