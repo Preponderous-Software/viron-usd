@@ -81,6 +81,8 @@ def test_scripted_random_walk_meets_criteria_1_to_5(viron_url, viron_token, get_
 
     # Criterion 1: only GET requests left the recorder.
     assert get_only_session.methods and set(get_only_session.methods) == {"GET"}
+    # The pinned Viron provides the bulk read, so this walk exercised it, not the fallback.
+    assert client.supports_bulk_placements(env)
 
     stage = Usd.Stage.Open(str(tmp_path / "run.usda"))
     assert stage.GetCompositionErrors() == []
@@ -128,6 +130,8 @@ def test_random_walk_demo_50_ticks_criterion_10(viron_url, viron_token, get_only
         recorder_session=get_only_session,
     )
     assert set(get_only_session.methods) == {"GET"}
+    # Placements + names per capture, and a few one-off reads; the fallback would cost 1 + 8.
+    assert 2 <= summary["requests_per_capture"] < 2.5
     stage = Usd.Stage.Open(summary["run"])
     assert stage.GetCompositionErrors() == []
     assert (stage.GetStartTimeCode(), stage.GetEndTimeCode()) == (0, TICKS - 1)
