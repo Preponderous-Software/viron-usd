@@ -478,7 +478,9 @@ smaller than text.
   walk (a frozen entity, a paused entity, a late arrival, a removal, a rename), and asserts
   criteria 1–5 on the output. The recorder's HTTP session fails the test on any non-`GET` request.
   The pinned Viron provides the bulk placement read, and the suite asserts that it was the path
-  taken, so the *G + N* fallback runs only against the fake Viron.
+  taken. To keep the *G + N* fallback running against a real Viron, one test records a third walk
+  through both paths, with the bulk endpoint answered `404` on the fallback client's transport so
+  that client sees a Viron older than the endpoint, and requires byte-identical stages.
 - **USD asset gate (separate CI workflow, `.github/workflows/usd-asset-gate.yml`):** starts the
   same throwaway Viron, records two runs with `examples/random_walk.py` (30 ticks in 10-tick
   value-clip chunks, and 10 ticks as a single binary layer), flattens the chunked one, and runs
