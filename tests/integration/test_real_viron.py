@@ -39,6 +39,22 @@ def translate_attr(stage, env, e):
     return stage.GetPrimAtPath(mapping.entity_path(env, e)).GetAttribute("xformOp:translate")
 
 
+class NoBulkReadTransport(RequestsTransport):
+    """Makes the real Viron look older than the bulk placement read: that path answers 404."""
+
+    def __init__(self, session):
+        super().__init__(session)
+        self.refused = 0
+
+    def get(self, url, headers, timeout):
+        if "/api/v1/locations/placements" not in url:
+            return super().get(url, headers, timeout)
+        self.refused += 1
+        response = requests.Response()
+        response.status_code = 404
+        return response
+
+
 def test_token_is_required(viron_url):
     response = requests.get(f"{viron_url}/api/v1/environments", timeout=10)
     assert response.status_code == 401
@@ -150,3 +166,45 @@ def test_random_walk_demo_50_ticks_criterion_10(viron_url, viron_token, get_only
         f"{summary['capture_ms_mean']:.1f} ms, p95 {summary['capture_ms_p95']:.1f} ms, "
         f"{summary['requests_per_capture']:.1f} GET requests per capture"
     )
+
+
+def test_bulk_and_fallback_paths_record_the_same_stage(viron_url, viron_token, get_only_session, tmp_path):
+    """One walk, read both ways between the driver's writes: the read path never shows in the output."""
+    rw = load_random_walk()
+    driver = rw.RandomWalkDriver(viron_url, viron_token, seed=23)
+    env = driver.create_world("viron-usd-it-read-paths", grids=2, size=6)
+    walkers = [driver.add_entity(f"walker-{i}") for i in range(6)]
+
+    bulk = VironClient(viron_url, viron_token, transport=RequestsTransport(get_only_session))
+    no_bulk_read = NoBulkReadTransport(get_only_session)
+    fallback = VironClient(viron_url, viron_token, transport=no_bulk_read)
+    out = {"bulk": tmp_path / "bulk", "fallback": tmp_path / "fallback"}
+    recorders = (
+        Recorder.create(bulk, env, out["bulk"], chunk_size=10, clock=lambda: 0.0),
+        Recorder.create(fallback, env, out["fallback"], chunk_size=10, clock=lambda: 0.0),
+    )
+    for tick in range(25):
+        if tick == 8:
+            driver.add_entity("late-arrival")
+        if tick == 12:
+            driver.remove_entity(walkers[0])
+        if tick == 16:
+            driver.rename(walkers[1], "renamed-walker")
+        if tick:
+            driver.step()
+        for recorder in recorders:
+            recorder.capture(tick)
+    for recorder in recorders:
+        recorder.close()
+
+    assert set(get_only_session.methods) == {"GET"}
+    assert bulk.supports_bulk_placements(env) is True
+    assert fallback.supports_bulk_placements(env) is False
+    assert no_bulk_read.refused == 1  # the one-off probe, so every tick took the fallback
+    assert bulk.request_count < fallback.request_count
+
+    files = sorted(p.relative_to(out["fallback"]).as_posix() for p in out["fallback"].rglob("*.usd*"))
+    assert "chunk_0002.usda" in files and "run.usda" in files
+    assert files == sorted(p.relative_to(out["bulk"]).as_posix() for p in out["bulk"].rglob("*.usd*"))
+    for name in files:
+        assert (out["bulk"] / name).read_bytes() == (out["fallback"] / name).read_bytes(), name
