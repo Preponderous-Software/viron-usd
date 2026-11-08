@@ -481,6 +481,12 @@ smaller than text.
   taken. To keep the *G + N* fallback running against a real Viron, one test records a third walk
   through both paths, with the bulk endpoint answered `404` on the fallback client's transport so
   that client sees a Viron older than the endpoint, and requires byte-identical stages.
+  A grid added mid-run is covered against the fake Viron only. The pinned Viron cannot produce
+  one through its API: grids are created only by `POST /api/v1/environments`
+  ([`EnvironmentController.java` L65-72](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/src/main/java/preponderous/viron/controllers/EnvironmentController.java#L65-L72)),
+  the grid controller adds none ([`GridController.java`](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/src/main/java/preponderous/viron/controllers/GridController.java)),
+  and a grid is deleted only with its whole environment
+  ([L82-151](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/src/main/java/preponderous/viron/controllers/EnvironmentController.java#L82-L151)).
 - **USD asset gate (separate CI workflow, `.github/workflows/usd-asset-gate.yml`):** starts the
   same throwaway Viron, records two runs with `examples/random_walk.py` (30 ticks in 10-tick
   value-clip chunks, and 10 ticks as a single binary layer), flattens the chunked one, and runs
@@ -536,4 +542,6 @@ Recorded 2026-10-17. Each resolves a former open question.
 3. **Occupancy colouring.** Time-sampled per-face `displayColor` on the cell mesh would show
    occupancy at a glance. Worth adding after the MVP?
 4. **Grids and entities changing mid-run.** Grids are re-read at each chunk boundary; a grid
-   created mid-chunk appears from the next chunk. Is that granularity enough?
+   created mid-chunk appears from the next chunk. Is that granularity enough? (The pinned Viron
+   has no endpoint that adds a grid to an existing environment; see
+   [Testing strategy](#testing-strategy).)
