@@ -353,6 +353,16 @@ def test_layout_merge_takes_newer_name_and_unions_location_order():
         merged.locations[30] = LocationInfo(7, 0, 0)
 
 
+def test_layout_merge_keeps_a_known_grids_first_seen_name():
+    # Characterizes current behaviour (#39): a grid renamed mid-run keeps the name it had when
+    # first read, while the environment's name is taken from the newer layout.
+    old = WorldLayout(1, "env-before", (GridInfo(5, 2, 3, "grid-before", 0),), {})
+    newer = WorldLayout(1, "env-after", (GridInfo(5, 2, 3, "grid-after", 0),), {})
+    merged = old.merged_with(newer)
+    assert merged.environment_name == "env-after"
+    assert merged.grid(5) == GridInfo(5, 2, 3, "grid-before", 0)
+
+
 def test_layout_merge_onto_a_layout_with_no_grids_starts_at_index_zero():
     empty = WorldLayout(1, "w", (), {})
     newer = WorldLayout(1, "w", (GridInfo(3, 1, 1, None, 4),), {})

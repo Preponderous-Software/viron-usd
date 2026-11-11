@@ -394,7 +394,13 @@ them); a range with no captured tick produces no chunk; the grids are re-read wh
 starts, before that tick's snapshot is taken (and re-tried on the next capture if that read
 fails). The re-read is merged into the layout already in use: grids seen earlier keep their index
 (so their origins and the positions recorded on them never move, even if a lower-numbered grid is
-removed), new grids are appended, and a removed grid keeps its plane in the stitched scene. The
+removed), new grids are appended, and a removed grid keeps its plane in the stitched scene. A
+grid seen earlier also keeps the `name` it was first read with, while the environment's name is
+taken from each re-read. The static scene, `viron:name` included, is written once, at stitch time,
+from the merged layout. So a chunked run records the environment's name as of the last chunk
+boundary and each grid's name as first seen; a grid renamed mid-run is not reflected
+(`tests/test_snapshot.py::test_layout_merge_keeps_a_known_grids_first_seen_name`; whether to
+refresh it is open, see [open question 4](#open-questions)). The
 manifest also gets the id-hash colour as the default of any animated `displayColor`. Driver extras (values, types, and the driver colour) are carried into each new chunk and
 re-authored when the entity first appears in it, so an omitted key keeps its value and a type
 change is still rejected across a chunk boundary.
@@ -544,4 +550,7 @@ Recorded 2026-10-17. Each resolves a former open question.
 4. **Grids and entities changing mid-run.** Grids are re-read at each chunk boundary; a grid
    created mid-chunk appears from the next chunk. Is that granularity enough? (The pinned Viron
    has no endpoint that adds a grid to an existing environment; see
-   [Testing strategy](#testing-strategy).)
+   [Testing strategy](#testing-strategy).) A grid renamed mid-run keeps its first-seen
+   `viron:name` (see Implementation notes (M6) above). Should it be refreshed from the re-read,
+   the way the environment's name is? The pinned Viron can rename a grid
+   (`PATCH /api/v1/grids/{id}/name`).
