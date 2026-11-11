@@ -553,4 +553,5 @@ Recorded 2026-10-17. Each resolves a former open question.
    [Testing strategy](#testing-strategy).) A grid renamed mid-run keeps its first-seen
    `viron:name` (see Implementation notes (M6) above). Should it be refreshed from the re-read,
    the way the environment's name is? The pinned Viron can rename a grid
-   (`PATCH /api/v1/grids/{id}/name`).
+   (`PATCH /api/v1/grids/{id}/name`,
+   [`GridController.java` L54](https://github.com/Preponderous-Software/viron/blob/c96362b750114878a0571dff71f20a755c68beba/src/main/java/preponderous/viron/controllers/GridController.java#L54)).
