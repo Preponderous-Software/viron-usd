@@ -1,5 +1,6 @@
 """Chunked layers, value clips and flatten — MVP acceptance criteria 7–9."""
 
+import dataclasses
 import random
 
 import pytest
@@ -356,3 +357,30 @@ def test_grid_removed_at_chunk_boundary_keeps_its_plane_and_origins(tmp_path):
         assert Gf.IsClose(attr.Get(t), want, 1e-9), t
     grid3 = UsdGeom.Xformable(stage.GetPrimAtPath(mapping.grid_path(E, 3)))
     assert tuple(grid3.ComputeLocalToWorldTransform(3).ExtractTranslation()) == mapping.grid_origin(three.grid(3))
+
+
+def named_layout(grids, env_name, grid_names):
+    """``make_layout`` with an environment name and ``{grid_id: name}`` grid names."""
+    layout = make_layout(grids, name=env_name)
+    named = tuple(dataclasses.replace(g, name=grid_names[g.grid_id]) for g in layout.grids)
+    return dataclasses.replace(layout, grids=named)
+
+
+def test_stitched_names_are_last_read_environment_and_first_seen_grids(tmp_path):
+    # Characterization (see #39): the static scene is written once, at stitch time, from the
+    # merged layout, so the environment's name is the one read at the last chunk boundary and
+    # each grid keeps the name it was first read with, including a grid that appears mid-run.
+    first = named_layout(((1, 5, 5),), "env-a", {1: "g1-a"})
+    reads = iter([
+        named_layout(((1, 5, 5), (2, 5, 5)), "env-b", {1: "g1-b", 2: "g2-b"}),
+        named_layout(((1, 5, 5), (2, 5, 5)), "env-c", {1: "g1-c", 2: "g2-c"}),
+    ])
+    w = ChunkedWriter(tmp_path, first, chunk_size=2, refresh_layout=lambda: next(reads))
+    for t in range(6):
+        w.write(snap(w.layout, t, {1: (1, 0, 0)}))
+    w.close()
+    assert len(w.chunk_paths) == 3
+    stage = Usd.Stage.Open(str(w.root_path))
+    assert stage.GetPrimAtPath(mapping.environment_path(E)).GetAttribute("viron:name").Get() == "env-c"
+    for grid_id, want in ((1, "g1-a"), (2, "g2-b")):
+        assert stage.GetPrimAtPath(mapping.grid_path(E, grid_id)).GetAttribute("viron:name").Get() == want

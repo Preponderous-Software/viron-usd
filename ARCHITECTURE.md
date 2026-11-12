@@ -399,7 +399,9 @@ grid seen earlier also keeps the `name` it was first read with, while the enviro
 taken from each re-read. The static scene, `viron:name` included, is written once, at stitch time,
 from the merged layout. So a chunked run records the environment's name as of the last chunk
 boundary and each grid's name as first seen; a grid renamed mid-run is not reflected
-(`tests/test_snapshot.py::test_layout_merge_keeps_a_known_grids_first_seen_name`; whether to
+(`tests/test_snapshot.py::test_layout_merge_keeps_a_known_grids_first_seen_name`, and through
+the stitched stage in
+`tests/test_chunks.py::test_stitched_names_are_last_read_environment_and_first_seen_grids`; whether to
 refresh it is open, see [open question 4](#open-questions)). The
 manifest also gets the id-hash colour as the default of any animated `displayColor`. Driver extras (values, types, and the driver colour) are carried into each new chunk and
 re-authored when the entity first appears in it, so an omitted key keeps its value and a type
